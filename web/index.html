@@ -107,22 +107,38 @@
        right thing without knowing anything about the controls.
        Small HUD bits — the cue, the badge, the level bar — still float over the image, the way
        they do on any camera app. It was the large opaque panel that caused the mismatch. */
-    #camera { background: #1a1a1a; }
-    #camera.active { display: flex; flex-direction: column; justify-content: center; }
+    #camera { background: #14120F; }
+    #camera.active { display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+
+    /* The same live feed, blurred and dimmed, filling everything the 3:4 frame does not. A flat
+       black band above the frame read as a fault — as though the app had failed to fill the
+       screen — where a soft continuation reads as depth of field. It is also more honest: you can
+       see what the camera can see, and that it is not what you are taking.
+       One decode, two presentations — both elements share the stream, so this costs compositing
+       rather than a second video pipeline. The blur is deliberately large: browsers downsample
+       heavily blurred layers, so a wide radius is cheaper than a narrow one. */
+    #videoBackdrop {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+      filter: blur(34px) brightness(0.45) saturate(0.85);
+      transform: scale(1.15);        /* push the blur's own soft edge off screen */
+      z-index: 0; pointer-events: none;
+    }
     /* A fixed 3:4 frame — the shape a phone camera natively produces, and the shape every camera
        app shows. Letting it fill the leftover space instead gave an arbitrary tall rectangle that
        matched no standard photo, and forced a second crop off an already-cropped 16:9 stream.
        Width is capped so the frame never grows taller than the space available, which keeps the
        aspect exact instead of letting a max-height quietly squash it. */
     .cam-frame {
-      position: relative; overflow: hidden; background: #000;
+      position: relative; overflow: hidden; background: #000; z-index: 1;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.28), 0 18px 50px rgba(0,0,0,0.45);
       flex: 0 0 auto; margin: 0 auto;
       width: min(100%, calc(72vh * 0.75));
       width: min(100%, calc(72dvh * 0.75));
       aspect-ratio: 3 / 4;
     }
     .cam-controls {
-      flex: 0 1 auto; background: #141412;
+      flex: 0 1 auto; position: relative; z-index: 2; background: rgba(16,15,13,0.88);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
       padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
     }
@@ -158,6 +174,15 @@
     /* while a straighten cue is showing, the bar is the thing to look at */
     #camLevel.needs-fix #camLevelTrack { background: rgba(230,126,34,0.55); }
     #camLevel.needs-fix #camLevelDot { background: #E67E22; box-shadow: 0 0 10px rgba(230,126,34,.8); }
+
+    /* Crop marks on the frame corners: the clearest way to say the sharp rectangle is the shot
+       and the blur around it is not. Same device as the home screen and the app icon. */
+    .frame-ticks { position: absolute; inset: 0; pointer-events: none; z-index: 24; }
+    .frame-ticks i { position: absolute; width: 22px; height: 22px; border: 0 solid rgba(255,255,255,0.9); }
+    .frame-ticks i:nth-child(1) { top: 10px; left: 10px; border-top-width: 2px; border-left-width: 2px; }
+    .frame-ticks i:nth-child(2) { top: 10px; right: 10px; border-top-width: 2px; border-right-width: 2px; }
+    .frame-ticks i:nth-child(3) { bottom: 10px; left: 10px; border-bottom-width: 2px; border-left-width: 2px; }
+    .frame-ticks i:nth-child(4) { bottom: 10px; right: 10px; border-bottom-width: 2px; border-right-width: 2px; }
 
     /* live detection overlay + chips */
     #liveOverlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 23; }
@@ -301,9 +326,13 @@
 
   <!-- ── Camera ── -->
   <section id="camera" class="screen">
+    <!-- The feed beyond the frame: visible, obviously out of shot. -->
+    <video id="videoBackdrop" autoplay playsinline muted aria-hidden="true"></video>
+
     <!-- Everything inside here is the photograph. Nothing opaque may sit over it. -->
     <div class="cam-frame" id="camFrame">
       <video id="video" autoplay playsinline muted></video>
+      <div class="frame-ticks" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <canvas id="liveOverlay"></canvas>
       <div id="coachCue" class="coach-cue">
         <span id="coachText">Have them stand on the marker</span>
@@ -603,6 +632,7 @@
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
         $('video').srcObject = stream;
+        $('videoBackdrop').srcObject = stream;   // same stream, so they can never disagree
         hasCamera = true;
         setCamState('idle');
         show('camera');
@@ -636,7 +666,7 @@
       try {
         const ns = await navigator.mediaDevices.getUserMedia(constraints);
         if (stream) stream.getTracks().forEach(t => t.stop());
-        stream = ns; $('video').srcObject = ns; currentLens = lens;
+        stream = ns; $('video').srcObject = ns; $('videoBackdrop').srcObject = ns; currentLens = lens;
         document.querySelectorAll('.lens-opt').forEach(o => o.classList.toggle('active', o.dataset.lens === lens));
         if (lens === 'ultra') toast('0.5× wide — keep your subject centred to avoid edge distortion');
       } catch (e) { toast('Could not switch lens'); }
