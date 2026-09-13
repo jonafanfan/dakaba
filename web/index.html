@@ -1135,23 +1135,39 @@
     let motionGranted = false;
 
     const onMotion = (e) => {
-        const a = e.accelerationIncludingGravity; if (!a) return;
-        const x = a.x || 0, y = a.y || 0, z = a.z || 0;
-        const g = Math.hypot(x, y, z) || 1;
-        const d = $('camLevelDot'), v = $('camLevelVal'); if (!d || !v) return;
-        // Angle of the phone's long axis from world-vertical: 0 = perfectly upright, 90 = flat.
-        // Pitching (aim up/down) OR rolling (lean left/right) raises it; yawing (rotating while
-        // staying upright) leaves it at 0. |y| makes it sign-agnostic across iOS/Android.
-        const tilt = Math.acos(Math.min(1, Math.abs(y) / g)) * 180 / Math.PI;
-        // roll (horizon lean) is what positions the dot; tilt is what's read out as degrees
-        const lean = Math.atan2(x, Math.abs(y)) * 180 / Math.PI;
-        liveLean = lean;
-        const p = Math.max(0, Math.min(100, ((lean / 30) + 1) * 50));
-        const upright = tilt < 3;                                        // green anywhere in 0–3°
-        d.style.left = p + '%';
-        d.classList.toggle('on', upright);
-        v.classList.toggle('on', upright);
-      v.textContent = Math.round(tilt) + '°';
+      const a = e.accelerationIncludingGravity; if (!a) return;
+      const x = a.x || 0, y = a.y || 0, z = a.z || 0;
+      const g = Math.hypot(x, y, z) || 1;
+      const d = $('camLevelDot'), v = $('camLevelVal'); if (!d || !v) return;
+
+      // ROLL, and only roll: how far the horizon leans. Everything here reads from the one angle,
+      // because the bar had the dot on roll and the number on the angle from world-vertical, which
+      // folds in PITCH as well. Aim down 25 degrees to frame a shot — which this app asks you to do
+      // whenever camera_tilt fires — and the dot sat dead centre while the number read 25 and
+      // refused to go green: one widget disagreeing with itself, and the app contradicting its own
+      // advice. |y| keeps the sign convention agnostic across iOS and Android.
+      const planar = Math.hypot(x, y);
+      // Near flat, face up or down, almost no gravity is left in the screen plane and roll is two
+      // noisy numbers handed to atan2 — it swings wildly and can read a confident 0. Say nothing
+      // rather than claim level, and leave liveLean alone so a phone on a table cannot satisfy the
+      // straighten cue's latch.
+      if (planar / g < 0.2) {
+        d.style.left = '50%';
+        d.classList.remove('on');
+        v.classList.remove('on');
+        v.textContent = '–';
+        return;
+      }
+      const roll = Math.atan2(x, Math.abs(y)) * 180 / Math.PI;
+      liveLean = roll;
+      const p = Math.max(0, Math.min(100, ((roll / 30) + 1) * 50));
+      // The same 3-degree band the straighten cue clears at, so the bar turns green exactly when
+      // the cue goes away instead of a moment either side of it.
+      const level = Math.abs(roll) < 3;
+      d.style.left = p + '%';
+      d.classList.toggle('on', level);
+      v.classList.toggle('on', level);
+      v.textContent = Math.round(Math.abs(roll)) + '°';
     };
 
     // Asked from the start tap, and BEFORE getUserMedia — that ordering is the whole fix. iOS

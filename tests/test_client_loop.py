@@ -32,11 +32,16 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node
 DOM_STUB = r"""
 const cues = [];      // every #coachText assignment, in order
 const hints = [];     // every #placeHint assignment, in order
+const levels = [];    // every #camLevelVal assignment, in order
+const dotLefts = [];  // every #camLevelDot style.left assignment, in order
 const toggles = [];   // every classList.toggle(cls, val) call, tagged with the element id
 function el(id) {
   return {
     id,
-    style: new Proxy({}, { set: () => true, get: () => '' }),
+    style: new Proxy({}, {
+      set: (t, k, val) => { t[k] = val; if (id === 'camLevelDot' && k === 'left') dotLefts.push(val); return true; },
+      get: (t, k) => t[k] || '',
+    }),
     classList: {
       add(){}, remove(){},
       toggle(cls, val){ toggles.push({ id, cls, val }); },
@@ -47,6 +52,7 @@ function el(id) {
     set textContent(v) {
       if (id === 'coachText') cues.push(v);
       if (id === 'placeHint') hints.push(v);
+      if (id === 'camLevelVal') levels.push(v);
     },
     get textContent() { return ''; },
     innerHTML: '', value: '', files: [],
@@ -191,6 +197,88 @@ def test_the_needs_fix_class_follows_the_straighten_cue():
     """)
     vals = [t["val"] for t in out["fixToggles"]]
     assert vals == [True, False], f"needs-fix should track the straighten cue, got {vals}"
+
+
+# ── the level bar, driven by real gravity vectors ────────────────────────────
+#
+# onMotion had no tests at all: every cue test sets `liveLean` by hand, which walks straight past
+# the function that computes it. That is how the bar shipped reading pitch as though it were roll.
+
+POSE = """
+function pose(rollDeg, pitchDeg) {
+  const G = 9.81, rad = d => d * Math.PI / 180;
+  return { x: G * Math.sin(rad(rollDeg)) * Math.cos(rad(pitchDeg)),
+           y: G * Math.cos(rad(rollDeg)) * Math.cos(rad(pitchDeg)),
+           z: G * Math.sin(rad(pitchDeg)) };
+}
+function hold(rollDeg, pitchDeg) {
+  onMotion({ accelerationIncludingGravity: pose(rollDeg, pitchDeg) });
+  const green = toggles.filter(t => t.id === 'camLevelDot' && t.cls === 'on');
+  return { readout: levels[levels.length - 1],
+           green: green.length ? green[green.length - 1].val : null,
+           dot: parseFloat(dotLefts[dotLefts.length - 1]),
+           liveLean: Math.round(liveLean) };
+}
+"""
+
+
+def test_held_upright_the_bar_reads_zero_and_goes_green():
+    out = run(POSE + """
+      console.log(JSON.stringify(hold(0, 0)));
+    """)
+    assert out["readout"] == "0°"
+    assert out["green"] is True
+    assert out["dot"] == 50, "a level phone puts the dot in the middle of the track"
+
+
+def test_leaning_reads_the_angle_and_moves_the_dot_that_way():
+    out = run(POSE + """
+      console.log(JSON.stringify({ right: hold(20, 0), left: hold(-20, 0) }));
+    """)
+    assert out["right"]["readout"] == "20°" and out["left"]["readout"] == "20°", (
+        "the readout is a magnitude; the dot carries the direction"
+    )
+    assert out["right"]["green"] is False and out["left"]["green"] is False
+    assert out["right"]["dot"] > 50 > out["left"]["dot"]
+
+
+def test_aiming_up_or_down_leaves_the_level_alone():
+    """The regression. A level bar answers one question — is the horizon straight — and pitch is
+    not part of it. The old reading was the angle from world-vertical, so aiming down to frame a
+    shot climbed the number and killed the green while the dot sat centred, one widget disagreeing
+    with itself. Worse, camera_tilt actively asks the user to aim lower, so the app broke its own
+    indicator by being obeyed.
+    """
+    out = run(POSE + """
+      console.log(JSON.stringify({ down25: hold(0, 25), down45: hold(0, 45), up30: hold(0, -30) }));
+    """)
+    for pose_name, row in out.items():
+        assert row["readout"] == "0°", f"{pose_name} leaked pitch into the readout: {row['readout']}"
+        assert row["green"] is True, f"{pose_name} lost the green while perfectly level"
+        assert row["dot"] == 50
+
+
+def test_the_green_band_is_the_one_the_straighten_cue_clears_at():
+    """Both sit at 3 degrees on purpose: the bar should turn green exactly as the cue goes away,
+    not a couple of degrees either side of it."""
+    out = run(POSE + """
+      console.log(JSON.stringify({ inside: hold(2, 0), outside: hold(4, 0) }));
+    """)
+    assert out["inside"]["green"] is True
+    assert out["outside"]["green"] is False
+
+
+def test_a_phone_lying_flat_says_nothing_rather_than_claiming_level():
+    """Face up, almost no gravity is left in the screen plane, so roll is two noisy numbers handed
+    to atan2 — it swings and can read a confident 0. It must also not touch liveLean, or a phone put
+    down on a table would satisfy the straighten cue's latch."""
+    out = run(POSE + """
+      liveLean = 999;                       // sentinel: a flat reading must not overwrite it
+      const flat = hold(0, 90);
+      console.log(JSON.stringify({ flat, liveLeanAfter: liveLean }));
+    """)
+    assert out["flat"]["readout"] == "–", "a meaningless angle must not be printed as a number"
+    assert out["liveLeanAfter"] == 999, "a flat phone quietly satisfied the straighten latch"
 
 
 # ── retake: another shot of the same setup ───────────────────────────────────

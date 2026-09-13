@@ -154,7 +154,7 @@ preview can load the UI but not scan. To scan from a preview you'd need to add i
 .venv/Scripts/python -m pytest        # or bare `pytest`
 ```
 
-**257 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
+**262 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
 the fixture makes constructing a real one a test failure.
 
 The three `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
@@ -170,7 +170,7 @@ both were out-of-scope identifiers that only failed when the code actually ran.
 | [`test_client_i18n.py`](tests/test_client_i18n.py) | 19 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the tilt cue's key |
 | [`test_client_overlay.py`](tests/test_client_overlay.py) | 15 | `visibleCrop` maths and the camera-region layout invariants |
 | [`test_filters.py`](tests/test_filters.py) | 14 | pixel-baked filters match the CSS preview exactly |
-| [`test_client_loop.py`](tests/test_client_loop.py) | 14 | **the render loop and the tilt/straighten coaching flow, run for real in node** |
+| [`test_client_loop.py`](tests/test_client_loop.py) | 19 | **the render loop, the tilt/straighten cues and the level bar's gravity maths, run for real in node** |
 | [`test_features.py`](tests/test_features.py) | 13 | `extract_features` on synthetic scenes, all three blur regimes |
 
 CI runs the suite on every PR to `main` ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)).
