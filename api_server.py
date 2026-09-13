@@ -14,12 +14,19 @@ from scene_analysis import analyze_scene, DEFAULT_LANGUAGE, InappropriateImageEr
 
 logger = logging.getLogger("daka")
 
-# Frontend origins allowed to call this API. Production is the Netlify site; override with a
-# comma-separated ALLOWED_ORIGINS in the Render dashboard to add a Netlify preview deploy or a
-# local dev server (e.g. "https://dakaba.netlify.app,http://localhost:8080"). Note that CORS is
+# Frontend origins allowed to call this API. Both hosts are listed while the frontend moves from
+# Netlify to Cloudflare Pages: an allowed origin nobody uses costs nothing, and a missing one is a
+# dead app. Netlify's entry can come out once its site is deleted.
+#
+# Override with a comma-separated ALLOWED_ORIGINS in the Render dashboard to add a preview deploy
+# or a local dev server (e.g. "https://dakaba.pages.dev,http://localhost:8080"). Note that CORS is
 # a browser-enforced policy, not access control — it stops other sites from spending our key
 # through a user's browser, and does nothing against a direct curl.
-DEFAULT_ALLOWED_ORIGINS = "https://dakaba.netlify.app"
+#
+# Preview deploys are NOT covered: both hosts give them a per-build subdomain
+# (abc123.dakaba.pages.dev), which cannot be listed in advance. A preview can show the UI but its
+# scans will fail CORS unless that exact origin is added here.
+DEFAULT_ALLOWED_ORIGINS = "https://dakaba.pages.dev,https://dakaba.netlify.app"
 ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS).split(",") if o.strip()
 ]

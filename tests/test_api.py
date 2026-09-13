@@ -266,9 +266,21 @@ def test_disallowed_origin_gets_no_cors_headers(client, ok_analysis):
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_netlify_production_origin_is_allowed_by_default():
-    """The deployed frontend must work with no env var set in Render."""
-    assert "https://dakaba.netlify.app" in api_server.ALLOWED_ORIGINS
+@pytest.mark.parametrize(
+    "origin", ["https://dakaba.pages.dev", "https://dakaba.netlify.app"]
+)
+def test_the_production_origins_are_allowed_by_default(origin):
+    """The deployed frontend must work with no env var set in Render — on either host, so the
+    move between them cannot take the app down in the gap."""
+    assert origin in api_server.ALLOWED_ORIGINS
+
+
+def test_a_default_origin_actually_reaches_cors(client, ok_analysis):
+    """The list is only half of it: this is the header the browser actually checks."""
+    response = client.post(
+        "/analyze", files=upload(), headers={"origin": "https://dakaba.pages.dev"}
+    )
+    assert response.headers.get("access-control-allow-origin") == "https://dakaba.pages.dev"
 
 
 def test_wildcard_origin_is_not_configured():
