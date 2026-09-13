@@ -1,8 +1,17 @@
 # `/analyze` Response Contract
 
-**Owner:** AI Engine (@Zuil909) · **Consumers:** `web/index.html` · **Version:** `0.13` (shipped)
+**Owner:** AI Engine (@Zuil909) · **Consumers:** `web/index.html` · **Version:** `0.14` (shipped)
 
 > **Recent changes**
+>
+> - **`0.14` — request field `lang` (additive, optional).** `POST /analyze` accepts a `lang` form
+>   field of `en` (default) or `zh`. It decides the language of the three model-written fields —
+>   `scene_type`, `hashtags`, `placement_hint` — which previously drifted between English and
+>   Chinese within a single response. A request without it, or with a value the engine does not
+>   know, behaves exactly as before. **Not affected:** `filter` is always an English keyword, and
+>   `placement.reason_text` / `camera_tilt.reason` stay English — both carry a stable machine key
+>   (`placement.reason`, `camera_tilt.direction`) that the client translates itself, so no paid
+>   call is spent on a sentence the client already knows. See §3.6.
 >
 > - **`0.13` — `placement_hint` (additive).** One short model-written instruction saying where to
 >   stand, anchored to something visible and expressing **depth** — the thing a flat marker cannot
@@ -237,6 +246,11 @@ Derived from measured features, not from the model — reliable. Currently **unu
 Currently **unused by the UI**.
 
 ### 3.6 `scene_type`, `hashtags`, `filter` — the model's output
+
+**Language** *(new in `0.14`)*: `scene_type`, `hashtags` and `placement_hint` are written in the
+language named by the request's `lang` field — `en` (default) or `zh` — and the prompt requires all
+of them to agree. `filter` is not translated in any language: it is matched against `VALID_FILTERS`
+server-side and looked up in `FILTER_CSS` by the client, so it is a key, not prose.
 
 All three come from a single vision call in `_analyze_with_gpt`, which **never raises**. Every
 failure mode yields `{}` and each field falls back to its default rather than failing the scan:

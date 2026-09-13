@@ -42,6 +42,19 @@ MIN_EDGE_DENSITY = 0.008      # Canny edge fraction below which the scene is "to
 EDGE_SHARPNESS_MIN = 8.0      # mean |Laplacian| at edges below this = genuinely soft / blurred
 
 
+# The languages the free-text fields can come back in. Named in the prompt exactly as written
+# here, because "SIMPLIFIED CHINESE" alone produced the occasional traditional character.
+#
+# Filter names are deliberately NOT translated: the client looks them up in FILTER_CSS by exact
+# string, so they are contract values rather than prose. The same goes for PLACEMENT_REASONS below
+# — each one has a stable key, so the client translates them without a second call to the model.
+RESPONSE_LANGUAGES = {
+    "en": "ENGLISH",
+    "zh": "SIMPLIFIED CHINESE (简体中文)",
+}
+DEFAULT_LANGUAGE = "en"
+
+
 # Why the marker landed where it did. Kept short — this is drawn under the marker on a phone, so
 # anything much longer than this wraps or runs off the frame.
 PLACEMENT_REASONS = {
@@ -218,7 +231,8 @@ def _moderate_image(b64: str) -> bool:
         return True
 
 
-def _analyze_with_gpt(b64: str, placement: dict | None = None) -> dict:
+def _analyze_with_gpt(b64: str, placement: dict | None = None,
+                      lang: str = DEFAULT_LANGUAGE) -> dict:
     """Scene name, filter and hashtags from the vision model. Never raises — returns {} instead.
 
     Every failure mode degrades to {}, which analyze_scene turns into safe defaults
@@ -229,6 +243,9 @@ def _analyze_with_gpt(b64: str, placement: dict | None = None) -> dict:
     # Tell the model which side the geometry already picked, so its sentence agrees with the
     # marker instead of contradicting it. extract_features runs before this call, so it is known.
     side = "left" if (placement or {}).get("x", 0.667) < 0.5 else "right"
+    # An unknown language falls back rather than failing the scan: the OpenCV half of the
+    # result is already computed and does not care what language anything is written in.
+    language = RESPONSE_LANGUAGES.get(lang, RESPONSE_LANGUAGES[DEFAULT_LANGUAGE])
     try:
         response = _get_openai_client().chat.completions.create(
             model="gpt-5.4-nano",
@@ -238,16 +255,17 @@ def _analyze_with_gpt(b64: str, placement: dict | None = None) -> dict:
                 "content": [
                     {"type": "text", "text": (
                         "You are analysing a photo for a 打卡 (check-in) photography app used in China.\n"
-                        "Return a JSON object with exactly these fields IN ENGLISH:\n"
+                        f"Return a JSON object with exactly these fields. Write scene_type, hashtags and "
+                        f"placement_hint entirely in {language} — all three, with no mixing between them:\n"
                         "- \"scene_type\": concise scene name (e.g. \"Café\", \"City Street\", \"Beach\", \"Temple\")\n"
-                        "- \"filter\": pick the best from exactly: "
+                        "- \"filter\": an exact keyword from this list, always in English, never translated: "
                         "\"Vivid\", \"Vivid Warm\", \"Vivid Cool\", \"Dramatic\", \"Dramatic Warm\", \"Dramatic Cool\", \"Silvertone\", \"Noir\". "
                         "Use the Warm variants for cosy/golden-hour scenes, Cool for clean/urban/overcast scenes, "
                         "Dramatic for moody or high-contrast scenes, and the black & white options (Silvertone soft, Noir high-contrast) "
                         "only when colour adds little.\n"
-                        "- \"hashtags\": array of exactly 3 relevant hashtags with # symbol, all lowercase, "
-                        "written in ENGLISH using Latin letters only. Do not use Chinese characters in the "
-                        "hashtags, even though the app itself is Chinese-themed.\n"
+                        f"- \"hashtags\": array of exactly 3 relevant hashtags with # symbol, all lowercase, "
+                        f"written in {language}. The app being Chinese-themed is not a reason to switch "
+                        f"language here — the hashtags must match the other fields.\n"
                         "- \"placement_hint\": ONE short instruction, at most 8 words, telling the person "
                         "where to stand. Anchor it to something actually visible in the photo, and make "
                         "the DEPTH clear — how far INTO the scene to stand. The app already shows the "
@@ -438,12 +456,12 @@ class InappropriateImageError(ValueError):
     pass
 
 
-def analyze_scene(image_path: str) -> dict:
+def analyze_scene(image_path: str, lang: str = DEFAULT_LANGUAGE) -> dict:
     b64 = _encode_image(image_path)
     if not _moderate_image(b64):
         raise InappropriateImageError("Image flagged as inappropriate")
     features = extract_features(image_path)
-    gpt = _analyze_with_gpt(b64, features["placement"])
+    gpt = _analyze_with_gpt(b64, features["placement"], lang)
 
     filter_name = gpt.get("filter", "Vivid")
     if filter_name not in VALID_FILTERS:

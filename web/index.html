@@ -89,6 +89,20 @@
     .char { font-family: "Noto Serif SC", serif; font-size: 76px; font-weight: 700; color: var(--text); line-height: 1.12; }
     .char-row { display: flex; padding-left: 48px; }
 
+    /* Language is chosen on the way in, so the switch lives on the home screen only. A copy on
+       every screen would put a settings control inside the viewfinder for something nobody
+       changes mid-shoot. */
+    .lang-toggle {
+      position: absolute; top: 44px; right: 22px;
+      display: flex; padding: 3px; gap: 2px;
+      border: 1px solid var(--text2); border-radius: 100px;
+    }
+    .lang-opt {
+      font-family: inherit; font-size: 12px; line-height: 1; padding: 7px 13px;
+      border: none; background: none; color: var(--text2); border-radius: 100px;
+    }
+    .lang-opt.on { background: var(--accent); color: #fff; }
+
     .home-bottom { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
     .start-btn {
       width: 100%; max-width: 360px; height: 54px;
@@ -302,7 +316,11 @@
 
   <!-- ── Home ── -->
   <section id="home" class="screen active">
-    <div class="app-subtitle">Find your perfect shot</div>
+    <div class="lang-toggle" id="langToggle">
+      <button class="lang-opt" data-lang="en">EN</button>
+      <button class="lang-opt" data-lang="zh">中文</button>
+    </div>
+    <div class="app-subtitle" data-i18n="home.subtitle">Find your perfect shot</div>
     <div class="hero">
       <div class="viewfinder">
         <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
@@ -320,7 +338,7 @@
     </div>
     <div class="home-bottom">
       <button class="start-btn" id="startBtn">开始打卡</button>
-      <div class="hint">Point at an empty scene to begin</div>
+      <div class="hint" data-i18n="home.hint">Point at an empty scene to begin</div>
     </div>
   </section>
 
@@ -335,7 +353,7 @@
       <div class="frame-ticks" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <canvas id="liveOverlay"></canvas>
       <div id="coachCue" class="coach-cue">
-        <span id="coachText">Have them stand on the marker</span>
+        <span id="coachText" data-i18n="cue.stand">Have them stand on the marker</span>
       </div>
 
       <div class="status-chip" id="statusChip"></div>
@@ -365,27 +383,27 @@
       <!-- idle: shutter -->
       <div class="cam-idle" id="camIdle">
         <div class="shutter" id="shutter"><div class="shutter-inner"></div></div>
-        <div class="shutter-hint">Point at an empty scene and tap</div>
+        <div class="shutter-hint" data-i18n="cam.shutterHint">Point at an empty scene and tap</div>
       </div>
 
       <!-- tips panel -->
       <div class="tip-panel" id="tipPanel">
         <div class="place-hint" id="placeHint"></div>
-        <button class="take-photo" id="takePhotoBtn">Take Photo</button>
-        <span class="rescan" id="rescanBtn">Scan again</span>
+        <button class="take-photo" id="takePhotoBtn" data-i18n="cam.takePhoto">Take Photo</button>
+        <span class="rescan" id="rescanBtn" data-i18n="cam.scanAgain">Scan again</span>
       </div>
     </div>
 
     <!-- loading -->
     <div class="loading" id="camLoading">
       <div class="spinner"></div>
-      <div class="loading-text">Analysing scene…</div>
+      <div class="loading-text" data-i18n="cam.analysing">Analysing scene…</div>
     </div>
 
     <!-- capture gate (poor light / blurry) -->
     <div class="gate-block" id="gateBlock">
       <div class="gate-msg" id="gateMsg"></div>
-      <button class="start-btn" id="gateScanAgain" style="max-width:260px;">Scan again</button>
+      <button class="start-btn" id="gateScanAgain" style="max-width:260px;" data-i18n="cam.scanAgain">Scan again</button>
     </div>
   </section>
 
@@ -399,11 +417,11 @@
       <div class="filter-strip" id="filterStrip"></div>
       <div class="cards" id="cards"></div>
       <div class="bottom">
-        <button class="btn btn-primary" id="shareBtn">Share</button>
-        <button class="btn btn-secondary" id="saveBtn">Save</button>
+        <button class="btn btn-primary" id="shareBtn" data-i18n="res.share">Share</button>
+        <button class="btn btn-secondary" id="saveBtn" data-i18n="res.save">Save</button>
         <div class="after-shot">
-          <span class="scan-again" id="retakeBtn">Retake</span>
-          <span class="scan-again" id="scanAgain">Scan again</span>
+          <span class="scan-again" id="retakeBtn" data-i18n="res.retake">Retake</span>
+          <span class="scan-again" id="scanAgain" data-i18n="cam.scanAgain">Scan again</span>
         </div>
       </div>
     </div>
@@ -426,6 +444,171 @@
 
   <script>
     const API = 'https://daka-backend-9bfz.onrender.com';
+
+    /* ── Language ──────────────────────────────────────────────────────────────
+       Two languages, one table, and a `tr(key)` everywhere a sentence is shown. The app was a
+       Chinese-named product with an English interface, and the model took the hint: hashtags came
+       back in Chinese on some scans and English on others, which reads as a bug whichever
+       language you speak. The scan now sends `lang` and the model writes every free-text field in
+       that one language.
+
+       Three things deliberately do NOT move:
+       - the 打卡吧！ wordmark and 开始打卡 button — those are the brand, not copy;
+       - filter names in FILTER_CSS — the server picks one by exact string, so they are keys;
+       - text already on screen from a previous scan. The scene name and the standing hint were
+         written by the model in the old language, and retranslating them would mean paying for
+         another call to relabel a photo the user is already looking at. The next scan is in the
+         new language, which is soon enough.
+
+       English stays in the HTML as the shipped default, so a fault in this code leaves a working
+       English page rather than one showing key names. */
+    const LANGS = ['en', 'zh'];
+    const STRINGS = {
+      en: {
+        'home.subtitle': 'Find your perfect shot',
+        'home.hint': 'Point at an empty scene to begin',
+
+        'cam.shutterHint': 'Point at an empty scene and tap',
+        'cam.takePhoto': 'Take Photo',
+        'cam.scanAgain': 'Scan again',
+        'cam.analysing': 'Analysing scene…',
+        'cam.blocked': 'Camera blocked',
+        'cam.blurry': 'Hold steady — blurry',
+        'gate.light': 'Not enough light — find a brighter spot, then scan again.',
+        'gate.blur': 'That shot was blurry — hold steady, then scan again.',
+
+        'cue.stand': 'Have them stand on the marker',
+        'cue.ready': 'Getting ready…',
+        'cue.inFrame': 'Get them in frame',
+        'cue.left': 'Move them left',
+        'cue.right': 'Move them right',
+        'cue.closer': 'Bring them closer',
+        'cue.back': 'Send them back',
+        'cue.straighten': 'Straighten the camera',
+        'cue.perfect': 'Perfect — take the photo',
+
+        // Keyed off camera_tilt.direction and placement.reason, so the engine keeps sending its
+        // machine key and the phrasing is chosen here — no round trip to translate a fixed
+        // sentence the client already knows.
+        'tilt.up': 'Empty floor below — aim a little higher',
+        'tilt.down': 'Empty space above — aim a little lower',
+        'reason.backlight': 'Out of the window glare',
+        'reason.light': 'Light falls on your face',
+        'reason.balance': 'Balances the busy side',
+        'reason.clean_background': 'Cleaner background here',
+        'reason.default': 'Classic rule-of-thirds spot',
+
+        'res.share': 'Share',
+        'res.save': 'Save',
+        'res.saveFiltered': 'Save with filter',
+        'res.retake': 'Retake',
+        'res.hashtags': 'Hashtags',
+        'res.tapToCopy': 'tap to copy',
+        'res.copyAll': 'Copy all',
+        'res.scene': 'Scene',
+
+        'toast.copied': 'Copied!',
+        'toast.allCopied': 'All copied!',
+        'toast.saved': 'Saved',
+        'toast.copyFail': 'Copy failed',
+        'toast.noCam': 'Camera unavailable — pick a photo instead',
+        'toast.notReady': 'Camera not ready yet',
+        'toast.ultra': '0.5× wide — keep your subject centred to avoid edge distortion',
+        'toast.lensFail': 'Could not switch lens',
+
+        'err.timeout': 'Server took too long — it may be waking up. Try again.',
+        'err.generic': 'Analysis failed',
+        'err.badResponse': 'Bad response from server',
+        'err.server': 'Server error',
+      },
+      zh: {
+        'home.subtitle': '找到最好的取景位',
+        'home.hint': '对准一个没有人的场景即可开始',
+
+        'cam.shutterHint': '对准空场景，轻点快门',
+        'cam.takePhoto': '拍照',
+        'cam.scanAgain': '重新扫描',
+        'cam.analysing': '正在分析场景…',
+        'cam.blocked': '镜头被挡住了',
+        'cam.blurry': '拿稳一点 — 画面模糊',
+        'gate.light': '光线不足 — 换个亮一点的地方，再扫描一次。',
+        'gate.blur': '这张拍糊了 — 拿稳手机，再扫描一次。',
+
+        'cue.stand': '让对方站到标记上',
+        'cue.ready': '正在准备…',
+        'cue.inFrame': '让对方进入画面',
+        'cue.left': '让对方往左一点',
+        'cue.right': '让对方往右一点',
+        'cue.closer': '让对方走近一点',
+        'cue.back': '让对方退后一点',
+        'cue.straighten': '把手机端正',
+        'cue.perfect': '很好 — 可以拍了',
+
+        'tilt.up': '下方地面太空 — 镜头抬高一点',
+        'tilt.down': '上方留白太多 — 镜头放低一点',
+        'reason.backlight': '避开窗外的强光',
+        'reason.light': '光线正好打在脸上',
+        'reason.balance': '平衡较杂乱的一侧',
+        'reason.clean_background': '这里背景更干净',
+        'reason.default': '经典的三分线位置',
+
+        'res.share': '分享',
+        'res.save': '保存',
+        'res.saveFiltered': '保存（含滤镜）',
+        'res.retake': '再拍一张',
+        'res.hashtags': '话题标签',
+        'res.tapToCopy': '点击复制',
+        'res.copyAll': '全部复制',
+        'res.scene': '场景',
+
+        'toast.copied': '已复制！',
+        'toast.allCopied': '已全部复制！',
+        'toast.saved': '已保存',
+        'toast.copyFail': '复制失败',
+        'toast.noCam': '无法使用相机 — 请改从相册选一张',
+        'toast.notReady': '相机还没准备好',
+        'toast.ultra': '0.5× 超广角 — 让人物靠中间，避免边缘变形',
+        'toast.lensFail': '无法切换镜头',
+
+        'err.timeout': '服务器响应太慢 — 可能正在唤醒，请再试一次。',
+        'err.generic': '分析失败',
+        'err.badResponse': '服务器返回异常',
+        'err.server': '服务器错误',
+      },
+    };
+
+    // Filter names are English keys in FILTER_CSS and on the wire; only the label shown on the
+    // strip is translated. Missing entries fall back to the key, which is already readable.
+    const FILTER_LABELS = {
+      zh: {
+        'Original': '原图',
+        'Vivid': '鲜艳',
+        'Vivid Warm': '鲜艳暖调',
+        'Vivid Cool': '鲜艳冷调',
+        'Dramatic': '浓郁',
+        'Dramatic Warm': '浓郁暖调',
+        'Dramatic Cool': '浓郁冷调',
+        'Silvertone': '银调黑白',
+        'Noir': '硬黑白',
+      },
+    };
+
+    let lang = (() => {
+      // Saved choice first, then the phone's own language, then English. localStorage throws
+      // outright in a locked-down private window, so it is never read without a guard.
+      try {
+        const saved = localStorage.getItem('daka.lang');
+        if (LANGS.indexOf(saved) !== -1) return saved;
+      } catch (e) { /* storage unavailable — fall through to the device language */ }
+      return String((typeof navigator !== 'undefined' && navigator.language) || 'en')
+        .toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+    })();
+
+    function trOr(key, fallback) {
+      return (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || fallback;
+    }
+    function tr(key) { return trOr(key, key); }
+    function filterLabel(name) { return (FILTER_LABELS[lang] || {})[name] || name; }
 
     // Warm and cool are a WHITE BALANCE change — red up and blue down, or the reverse — and CSS
     // filters cannot express one. hue-rotate() leaves neutrals completely untouched, because grey
@@ -475,7 +658,7 @@
     }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
     function scaledSize(w, h, cap) { const m = Math.max(w, h); if (m <= cap) return [w, h]; const r = cap / m; return [Math.round(w*r), Math.round(h*r)]; }
-    function errMsg(e) { return e.name === 'AbortError' ? 'Server took too long — it may be waking up. Try again.' : (e.message || 'Analysis failed'); }
+    function errMsg(e) { return e.name === 'AbortError' ? tr('err.timeout') : (e.message || tr('err.generic')); }
 
     /* ── Coaching state ──
        standPos is where the SUBJECT should stand IN FRAME, from analysis.placement, whose x the
@@ -641,7 +824,7 @@
         startLive();
       } catch (e) {
         hasCamera = false;
-        toast('Camera unavailable — pick a photo instead');
+        toast(tr('toast.noCam'));
         $('fileInput').click();
       }
     }
@@ -668,8 +851,8 @@
         if (stream) stream.getTracks().forEach(t => t.stop());
         stream = ns; $('video').srcObject = ns; $('videoBackdrop').srcObject = ns; currentLens = lens;
         document.querySelectorAll('.lens-opt').forEach(o => o.classList.toggle('active', o.dataset.lens === lens));
-        if (lens === 'ultra') toast('0.5× wide — keep your subject centred to avoid edge distortion');
-      } catch (e) { toast('Could not switch lens'); }
+        if (lens === 'ultra') toast(tr('toast.ultra'));
+      } catch (e) { toast(tr('toast.lensFail')); }
     }
     document.querySelectorAll('.lens-opt').forEach(o => o.addEventListener('click', () => switchLens(o.dataset.lens)));
 
@@ -787,8 +970,8 @@
         lastCheck = now;
         const st = frameStats(video);
         let msg = '';
-        if (st.brightness < 22 || st.detail < 1.3) msg = 'Camera blocked';
-        else if (st.detail < 3.2) msg = 'Hold steady — blurry';
+        if (st.brightness < 22 || st.detail < 1.3) msg = tr('cam.blocked');
+        else if (st.detail < 3.2) msg = tr('cam.blurry');
         const s = $('statusChip');
         if (msg) { s.textContent = msg; s.classList.add('show', 'warn'); }
         else s.classList.remove('show');
@@ -824,28 +1007,28 @@
         // quick, and because there is no point levelling a frame nobody is standing in.
         if (tracker.failed || !tracker.landmarker) {
           // No detection available — fall back to the static prompt rather than guessing.
-          setCue(tracker.failed ? 'Have them stand on the marker' : 'Getting ready…');
+          setCue(tracker.failed ? tr('cue.stand') : tr('cue.ready'));
         } else if (!subject.seen) {
-          setCue('Get them in frame');
+          setCue(tr('cue.inFrame'));
         } else if (Math.abs(dx) >= limit) {
           // "them", not "you": the reader is holding the phone, and everything they are told to do
           // themselves (straighten, aim) is phrased that way too. Left/right are the READER's, i.e.
           // what is on screen — a subject told to "move left" would go the opposite way.
-          setCue(dx > 0 ? 'Move them left' : 'Move them right');
+          setCue(dx > 0 ? tr('cue.left') : tr('cue.right'));
         } else if (Math.abs(dy) >= limit + 0.03) {
           // Feet higher in frame than the marker means further away, and vice versa.
-          setCue(dy < 0 ? 'Bring them closer' : 'Send them back');
+          setCue(dy < 0 ? tr('cue.closer') : tr('cue.back'));
         } else if (needsStraightening) {
-          setCue('Straighten the camera');
+          setCue(tr('cue.straighten'));
         } else if (tiltHint) {
           setCue(tiltHint);
         } else {
-          setCue('Perfect — take the photo');
+          setCue(tr('cue.perfect'));
         }
       }
       } catch (err) {
         if (!liveLoop.warned) { liveLoop.warned = true; console.error('coaching overlay:', err); }
-        setCue('Have them stand on the marker');   // degrade to the static prompt, keep shooting
+        setCue(tr('cue.stand'));   // degrade to the static prompt, keep shooting
       }
     }
 
@@ -907,11 +1090,11 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 60000);
       try {
-        const fd = new FormData(); fd.append('file', blob, 'photo.jpg');
+        const fd = new FormData(); fd.append('file', blob, 'photo.jpg'); fd.append('lang', lang);
         const res = await fetch(API + '/analyze', { method: 'POST', body: fd, signal: controller.signal });
-        let data; try { data = await res.json(); } catch (e) { throw new Error('Bad response from server'); }
-        if (!res.ok) throw new Error(data.error || data.message || data.detail || ('Server error (' + res.status + ')'));
-        if (data.error || !data.lighting) throw new Error(data.error || 'Bad response from server');
+        let data; try { data = await res.json(); } catch (e) { throw new Error(tr('err.badResponse')); }
+        if (!res.ok) throw new Error(data.error || data.message || data.detail || (tr('err.server') + ' (' + res.status + ')'));
+        if (data.error || !data.lighting) throw new Error(data.error || tr('err.badResponse'));
         return data;
       } finally { clearTimeout(timer); }
     }
@@ -919,13 +1102,13 @@
     /* ── Stage 1: scan the scene ── */
     async function scanScene() {
       const blob = await grabScanBlob();
-      if (!blob) { toast('Camera not ready yet'); return; }
+      if (!blob) { toast(tr('toast.notReady')); return; }
       setCamState('loading');
       try {
         analysisResult = await postAnalyze(blob);
         // capture gate: block on poor light or a blurry frame — force a rescan
-        if (analysisResult.lighting && analysisResult.lighting.quality === 'Poor') { openGate('Not enough light — find a brighter spot, then scan again.'); return; }
-        if (analysisResult.blurry) { openGate('That shot was blurry — hold steady, then scan again.'); return; }
+        if (analysisResult.lighting && analysisResult.lighting.quality === 'Poor') { openGate(tr('gate.light')); return; }
+        if (analysisResult.blurry) { openGate(tr('gate.blur')); return; }
         beginCoaching(analysisResult);
       } catch (e) {
         setCamState('idle');
@@ -942,12 +1125,14 @@
       // != null, not truthiness: a legitimate 0 coordinate must not fall through to the default.
       const p = r.placement;
       standPos = (p && p.x != null && p.y != null) ? { x: p.x, y: p.y } : { x: 1/3, y: 2/3 };
-      standReason = (p && p.reason_text) || '';
+      standReason = (p && p.reason) ? trOr('reason.' + p.reason, p.reason_text || '')
+                                    : ((p && p.reason_text) || '');
 
       // camera_tilt is advisory: only cue when the engine actually found dead space AND gave
       // wording for it. Older responses have neither.
       const tilt = r.camera_tilt;
-      tiltHint = (tilt && tilt.direction && tilt.direction !== 'ok' && tilt.reason) ? tilt.reason : null;
+      tiltHint = (tilt && tilt.direction && tilt.direction !== 'ok' && tilt.reason)
+        ? trOr('tilt.' + tilt.direction, tilt.reason) : null;
 
       // composition.horizon describes the SCANNED frame, not the phone right now — so it only
       // opens the prompt. The live gravity reading decides when it is satisfied. Without a roll
@@ -957,7 +1142,7 @@
 
       coachingActive = true;
       $('coachCue').classList.add('show');
-      setCue('Get them in frame');
+      setCue(tr('cue.inFrame'));
       setCamState('tips');
     }
 
@@ -971,7 +1156,7 @@
     }
 
     function renderTips(r) {
-      $('sceneBadgeTop').textContent = r.scene_type || 'Scene';
+      $('sceneBadgeTop').textContent = r.scene_type || tr('res.scene');
       // Depth is the thing a flat marker cannot show: it says WHERE across the frame but nothing
       // about how far into the scene to stand. This is the model's job — it is the only part of
       // the system that knows there is a doorway or a bench to stand in front of.
@@ -981,7 +1166,7 @@
     /* ── Stage 2: take the keeper photo → results ── */
     async function takePhoto() {
       const dataURL = await grabKeeperDataURL();
-      if (!dataURL) { toast('Camera not ready'); return; }
+      if (!dataURL) { toast(tr('toast.notReady')); return; }
       loadCaptured(dataURL);
       stopLive();
       renderResults(analysisResult);
@@ -993,14 +1178,14 @@
       filterActive = true;
       buildFilterStrip(currentFilter);
       updateFilterUI();
-      $('sceneBadge').textContent = r.scene_type || 'Scene';
+      $('sceneBadge').textContent = r.scene_type || tr('res.scene');
       const pills = (r.hashtags || []).map(h => '<div class="pill" data-tag="' + esc(h) + '">' + esc(h) + '</div>').join('');
       $('cards').innerHTML = pills
-        ? '<div class="card"><div class="card-title">Hashtags <span class="ch">tap to copy</span></div><div class="pills">' + pills + '</div><div class="copy-all" id="copyAll">Copy all</div></div>'
+        ? '<div class="card"><div class="card-title">' + esc(tr('res.hashtags')) + ' <span class="ch">' + esc(tr('res.tapToCopy')) + '</span></div><div class="pills">' + pills + '</div><div class="copy-all" id="copyAll">' + esc(tr('res.copyAll')) + '</div></div>'
         : '';
-      $('cards').querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => copyText(p.dataset.tag, 'Copied!')));
+      $('cards').querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => copyText(p.dataset.tag, tr('toast.copied'))));
       const ca = $('copyAll');
-      if (ca) ca.addEventListener('click', () => copyText((r.hashtags || []).join(' '), 'All copied!'));
+      if (ca) ca.addEventListener('click', () => copyText((r.hashtags || []).join(' '), tr('toast.allCopied')));
     }
 
     /* ── Filter toggle ── */
@@ -1016,7 +1201,7 @@
       for (const name of [NO_FILTER, ...Object.keys(FILTER_CSS)]) {
         const opt = document.createElement('button');
         opt.className = 'filter-opt' + (name === recommended ? ' pick' : '');
-        opt.textContent = name;
+        opt.textContent = filterLabel(name);
         opt.dataset.filter = name;
         opt.addEventListener('click', () => {
           filterActive = name !== NO_FILTER;
@@ -1032,7 +1217,7 @@
       const selected = filterActive ? currentFilter : NO_FILTER;
       $('filterStrip').querySelectorAll('.filter-opt').forEach(
         (o) => o.classList.toggle('on', o.dataset.filter === selected));
-      $('saveBtn').textContent = filterActive ? 'Save with filter' : 'Save';
+      $('saveBtn').textContent = filterActive ? tr('res.saveFiltered') : tr('res.save');
     }
 
     /* ── Pixel-baked filters (match preview exactly) ── */
@@ -1100,9 +1285,9 @@
       const a = document.createElement('a'); a.href = url; a.download = 'daka.jpg';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast('Saved');
+      toast(tr('toast.saved'));
     }
-    async function copyText(text, msg) { try { await navigator.clipboard.writeText(text); toast(msg); } catch (e) { toast('Copy failed'); } }
+    async function copyText(text, msg) { try { await navigator.clipboard.writeText(text); toast(msg); } catch (e) { toast(tr('toast.copyFail')); } }
 
     /* ── File fallback (no live camera): analyse → results directly ── */
     $('fileInput').addEventListener('change', async (e) => {
@@ -1118,6 +1303,25 @@
       } catch (err) { toast(errMsg(err)); show('home'); }
       finally { $('camLoading').classList.remove('active'); }
     });
+
+    /* ── Language switch ── */
+    function applyLang(next) {
+      if (next && LANGS.indexOf(next) !== -1) {
+        lang = next;
+        try { localStorage.setItem('daka.lang', lang); } catch (e) { /* choice lasts this session */ }
+      }
+      // documentElement so assistive tech and the font stack follow the text, not just the label.
+      if (document.documentElement) document.documentElement.lang = (lang === 'zh' ? 'zh-CN' : 'en');
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
+      document.querySelectorAll('.lang-opt').forEach(
+        o => o.classList.toggle('on', o.dataset.lang === lang));
+      // The filter strip is built once per photo, so it needs rebuilding by hand — unlike the
+      // cue, which is rewritten on the next frame anyway.
+      if (capturedImg) { buildFilterStrip((analysisResult || {}).filter); updateFilterUI(); }
+    }
+    document.querySelectorAll('.lang-opt').forEach(
+      o => o.addEventListener('click', () => applyLang(o.dataset.lang)));
+    applyLang();
 
     /* ── Wire up ── */
     $('startBtn').addEventListener('click', startCamera);

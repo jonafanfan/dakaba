@@ -30,7 +30,7 @@ def client():
 @pytest.fixture
 def ok_analysis(monkeypatch):
     result = {"scene_type": "Cafe", "lighting": {"quality": "Good"}, "blurry": False}
-    monkeypatch.setattr(api_server, "analyze_scene", lambda path: result)
+    monkeypatch.setattr(api_server, "analyze_scene", lambda path, lang="en": result)
     return result
 
 
@@ -46,6 +46,33 @@ def test_health_is_open(client):
     assert response.json() == {"status": "ok"}
 
 
+# ── the language the caller asks for ──
+
+def langs_seen(client, monkeypatch, **post):
+    """What the engine was told to write in, for a given request."""
+    seen = []
+    monkeypatch.setattr(
+        api_server, "analyze_scene", lambda p, lang="en": seen.append(lang) or {"lighting": {}}
+    )
+    client.post("/analyze", files=upload(), **post)
+    return seen
+
+
+def test_the_requested_language_reaches_the_engine(client, monkeypatch):
+    assert langs_seen(client, monkeypatch, data={"lang": "zh"}) == ["zh"]
+
+
+def test_a_request_with_no_language_still_works(client, monkeypatch):
+    """Cached copies of the old page send no lang at all, and a scan from one must not 422."""
+    assert langs_seen(client, monkeypatch) == ["en"]
+
+
+def test_a_junk_language_is_passed_through_rather_than_rejected(client, monkeypatch):
+    """Deliberate: the engine falls back on anything it does not recognise, and refusing the
+    request would throw away a scan over a field that only chooses wording."""
+    assert langs_seen(client, monkeypatch, data={"lang": "../etc/passwd"}) == ["../etc/passwd"]
+
+
 # ── happy path ──
 
 def test_valid_upload_returns_the_analysis(client, ok_analysis):
@@ -57,7 +84,7 @@ def test_valid_upload_returns_the_analysis(client, ok_analysis):
 def test_temp_file_is_cleaned_up(client, monkeypatch, tmp_path):
     seen = {}
 
-    def capture(path):
+    def capture(path, lang="en"):
         seen["path"] = path
         assert __import__("os").path.exists(path), "engine must receive a real file"
         return {"lighting": {}}
@@ -71,7 +98,7 @@ def test_temp_file_is_cleaned_up(client, monkeypatch, tmp_path):
 def test_temp_file_is_cleaned_up_even_on_failure(client, monkeypatch):
     seen = {}
 
-    def boom(path):
+    def boom(path, lang="en"):
         seen["path"] = path
         raise RuntimeError("engine exploded")
 
@@ -139,7 +166,7 @@ def test_rate_limit_is_per_ip(client, ok_analysis):
 def test_rate_limit_precedes_the_engine(client, monkeypatch):
     """A throttled request must not cost an OpenAI call — that is the whole point."""
     calls = []
-    monkeypatch.setattr(api_server, "analyze_scene", lambda p: calls.append(p) or {"lighting": {}})
+    monkeypatch.setattr(api_server, "analyze_scene", lambda p, lang="en": calls.append(p) or {"lighting": {}})
     for _ in range(api_server.RATE_LIMIT_REQUESTS + 5):
         client.post("/analyze", files=upload())
     assert len(calls) == api_server.RATE_LIMIT_REQUESTS
@@ -148,7 +175,7 @@ def test_rate_limit_precedes_the_engine(client, monkeypatch):
 # ── error mapping ──
 
 def test_moderation_rejection_maps_to_400(client, monkeypatch):
-    def flagged(path):
+    def flagged(path, lang="en"):
         raise InappropriateImageError("nope")
 
     monkeypatch.setattr(api_server, "analyze_scene", flagged)
@@ -164,12 +191,12 @@ def test_moderation_is_distinguished_from_an_unreadable_image(client, monkeypatc
     "that image couldn't be read", which is both wrong and confusing.
     """
     monkeypatch.setattr(
-        api_server, "analyze_scene", lambda p: (_ for _ in ()).throw(InappropriateImageError())
+        api_server, "analyze_scene", lambda p, lang="en": (_ for _ in ()).throw(InappropriateImageError())
     )
     moderation = client.post("/analyze", files=upload()).json()["error"]
 
     api_server._hits.clear()
-    monkeypatch.setattr(api_server, "analyze_scene", lambda p: (_ for _ in ()).throw(ValueError()))
+    monkeypatch.setattr(api_server, "analyze_scene", lambda p, lang="en": (_ for _ in ()).throw(ValueError()))
     unreadable = client.post("/analyze", files=upload()).json()["error"]
 
     assert moderation != unreadable
@@ -180,7 +207,7 @@ def test_undecodable_image_maps_to_400(client, monkeypatch):
     from PIL import UnidentifiedImageError
 
     monkeypatch.setattr(
-        api_server, "analyze_scene", lambda p: (_ for _ in ()).throw(UnidentifiedImageError())
+        api_server, "analyze_scene", lambda p, lang="en": (_ for _ in ()).throw(UnidentifiedImageError())
     )
     response = client.post("/analyze", files=upload())
     assert response.status_code == 400
@@ -189,7 +216,7 @@ def test_undecodable_image_maps_to_400(client, monkeypatch):
 
 def test_unexpected_failure_maps_to_500(client, monkeypatch):
     monkeypatch.setattr(
-        api_server, "analyze_scene", lambda p: (_ for _ in ()).throw(RuntimeError("boom"))
+        api_server, "analyze_scene", lambda p, lang="en": (_ for _ in ()).throw(RuntimeError("boom"))
     )
     response = client.post("/analyze", files=upload())
     assert response.status_code == 500
@@ -200,7 +227,7 @@ def test_500_does_not_leak_internals(client, monkeypatch):
     secret = "postgres://user:hunter2@db.internal:5432/prod"
 
     monkeypatch.setattr(
-        api_server, "analyze_scene", lambda p: (_ for _ in ()).throw(RuntimeError(secret))
+        api_server, "analyze_scene", lambda p, lang="en": (_ for _ in ()).throw(RuntimeError(secret))
     )
     response = client.post("/analyze", files=upload())
     body = response.text
@@ -212,7 +239,7 @@ def test_500_does_not_leak_internals(client, monkeypatch):
 
 def test_every_error_body_has_the_same_shape(client, monkeypatch):
     """The client reads data.error unconditionally, so the key must always be there."""
-    monkeypatch.setattr(api_server, "analyze_scene", lambda p: {"lighting": {}})
+    monkeypatch.setattr(api_server, "analyze_scene", lambda p, lang="en": {"lighting": {}})
     cases = [
         client.post("/analyze", files=upload(content_type="text/plain")),
         client.post("/analyze", files=upload(content=b"")),

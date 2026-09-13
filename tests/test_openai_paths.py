@@ -20,6 +20,7 @@ from PIL import Image
 
 import scene_analysis
 from scene_analysis import (
+    RESPONSE_LANGUAGES,
     VALID_FILTERS,
     InappropriateImageError,
     _analyze_with_gpt,
@@ -183,18 +184,47 @@ def test_prompt_asks_for_exactly_the_live_fields(monkeypatch):
     assert "pose_tips" not in prompt, "pose_tips was removed in contract 0.10"
 
 
-def test_hashtag_instruction_pins_one_language(monkeypatch):
+@pytest.mark.parametrize("lang, expected", [("en", "ENGLISH"), ("zh", "SIMPLIFIED CHINESE")])
+def test_the_hashtag_line_names_the_language_itself(monkeypatch, lang, expected):
     """Mixed-language output looked like a bug, so the language is stated on the line itself.
 
-    The prompt asks for English at the top, but the model answered in Chinese often enough to be
-    noticed — a check-in app with a Chinese name is context enough to sway it. The instruction has
-    to live on the hashtag bullet, so this reads that bullet rather than the whole prompt.
+    The prompt named a language once, at the top, and the hashtag bullet did not repeat it — and a
+    check-in app with a Chinese name is context enough to sway the model. Hashtags came back in
+    Chinese on some scans and English on others. This reads that one bullet rather than searching
+    the whole prompt, so it cannot pass on a language named somewhere else.
     """
     client = install(FakeClient(completion=completion("{}")), monkeypatch)
-    _analyze_with_gpt("Zm9v")
+    _analyze_with_gpt("Zm9v", lang=lang)
     bullet = next(l for l in prompt_text(client).splitlines() if '"hashtags"' in l)
-    assert "ENGLISH" in bullet
-    assert "Chinese" in bullet, "the failure mode itself should be named, not just the target"
+    assert expected in bullet
+
+
+@pytest.mark.parametrize("lang", list(RESPONSE_LANGUAGES))
+def test_the_filter_keyword_is_never_translated(monkeypatch, lang):
+    """The client looks the filter up in FILTER_CSS by exact string and the engine validates it
+    against VALID_FILTERS. A translated filter name matches neither, which would silently disable
+    the grade in whichever language it happened in."""
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v", lang=lang)
+    prompt = prompt_text(client)
+    for filter_name in VALID_FILTERS:
+        assert filter_name in prompt
+    assert "never translated" in prompt
+
+
+def test_an_unknown_language_falls_back_rather_than_failing(monkeypatch):
+    """A junk lang must not cost the scan. The OpenCV half is already computed by this point and
+    does not care what language anything is written in."""
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v", lang="klingon")
+    assert RESPONSE_LANGUAGES["en"] in prompt_text(client)
+
+
+def test_the_language_reaches_the_model_from_analyze_scene(monkeypatch, scene_image):
+    """The end the API actually calls — the parameter is useless if it stops at the front door."""
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    analyze_scene(scene_image, lang="zh")
+    assert RESPONSE_LANGUAGES["zh"] in prompt_text(client)
 
 
 @pytest.mark.parametrize("filter_name", VALID_FILTERS)
