@@ -255,6 +255,30 @@ def test_only_transient_huds_overlay_the_image():
     )
 
 
+def test_the_controls_bar_lets_the_blurred_feed_through():
+    """It always had a backdrop-filter, but at 0.88 alpha the tint did all the work and the blur
+    behind it was invisible — so it read as the same black band the surround used to be."""
+    html = PAGE.read_text(encoding="utf-8")
+    rule = re.search(r"\.cam-controls\s*\{([^}]*)\}", html).group(1)
+    assert "backdrop-filter" in rule, "no blur behind the controls bar"
+    alpha = re.search(r"background: rgba\([^)]*?,\s*([\d.]+)\)", rule)
+    assert alpha, "the bar's background is no longer an rgba tint"
+    assert float(alpha.group(1)) < 0.6, (
+        f"tint is {alpha.group(1)} — opaque enough to hide the blur it sits on"
+    )
+
+
+def test_the_controls_bar_animates_its_height():
+    """The three states hold different controls, so the bar changes height and the frame centred
+    above it moves with it. Without the transition that move is an instant snap."""
+    html = PAGE.read_text(encoding="utf-8")
+    rule = re.search(r"\.cam-controls\s*\{([^}]*)\}", html).group(1)
+    assert "transition:" in rule and "height" in rule, "the bar's height change is not animated"
+    assert "overflow: hidden" in rule, "an animated height needs its content clipped"
+    state = re.search(r"function setCamState\(s\) \{(.*?)\n    \}", html, re.S).group(1)
+    assert "resizeControls()" in state, "nothing re-measures the bar when the state changes"
+
+
 def test_the_level_bar_is_out_of_the_scene_badge_s_way():
     """Both were centred at the top of the frame, so the bar sat across the scene label.
 
