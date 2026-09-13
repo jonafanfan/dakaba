@@ -183,6 +183,20 @@ def test_prompt_asks_for_exactly_the_live_fields(monkeypatch):
     assert "pose_tips" not in prompt, "pose_tips was removed in contract 0.10"
 
 
+def test_hashtag_instruction_pins_one_language(monkeypatch):
+    """Mixed-language output looked like a bug, so the language is stated on the line itself.
+
+    The prompt asks for English at the top, but the model answered in Chinese often enough to be
+    noticed — a check-in app with a Chinese name is context enough to sway it. The instruction has
+    to live on the hashtag bullet, so this reads that bullet rather than the whole prompt.
+    """
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v")
+    bullet = next(l for l in prompt_text(client).splitlines() if '"hashtags"' in l)
+    assert "ENGLISH" in bullet
+    assert "Chinese" in bullet, "the failure mode itself should be named, not just the target"
+
+
 @pytest.mark.parametrize("filter_name", VALID_FILTERS)
 def test_prompt_offers_every_valid_filter(monkeypatch, filter_name):
     """The engine validates against VALID_FILTERS, so the prompt must offer the same set."""
