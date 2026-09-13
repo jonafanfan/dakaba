@@ -255,6 +255,29 @@ def test_only_transient_huds_overlay_the_image():
     )
 
 
+def test_the_level_bar_is_out_of_the_scene_badge_s_way():
+    """Both were centred at the top of the frame, so the bar sat across the scene label.
+
+    Asserted from the CSS rather than by rendering: there is no browser here to measure with, and
+    the rule that actually caused it — `left: 50%` on both — is visible in the source.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    bar = re.search(r"#camLevel\s*\{([^}]*)\}", html)
+    assert bar, "no #camLevel rule"
+    assert "left: 50%" not in bar.group(1), "the level bar is centred over the scene badge again"
+    assert "right:" in bar.group(1), "the level bar should sit in a corner, out of the frame's middle"
+
+
+def test_a_long_scene_name_cannot_reach_the_level_bar():
+    """The badge is centred and the bar is in the corner, so a wide enough label still collides.
+    Capping the badge is what makes the separation hold for a name like "Riverside Promenade"."""
+    html = PAGE.read_text(encoding="utf-8")
+    badge = re.search(r"\.scene-badge-top\s*\{([^}]*)\}", html)
+    assert badge, "no .scene-badge-top rule"
+    assert "max-width" in badge.group(1), "an unbounded badge can grow under the level bar"
+    assert "text-overflow: ellipsis" in badge.group(1), "a capped badge must truncate, not clip"
+
+
 # ── native capture shape ─────────────────────────────────────────────────────
 
 def test_the_frame_is_a_standard_photo_shape():

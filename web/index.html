@@ -169,6 +169,10 @@
       position: absolute; top: calc(20px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,0.45); color: #fff; padding: 6px 16px; border-radius: 100px;
       font-size: 14px; font-weight: 600; white-space: nowrap; display: none;
+      /* Centred, with the level bar in the right corner — so it is capped short of reaching it.
+         A long scene name ("Riverside Promenade") would otherwise slide under the bar, which is
+         the collision this width exists to prevent. */
+      max-width: calc(100% - 200px); overflow: hidden; text-overflow: ellipsis;
     }
 
     /* idle shutter */
@@ -178,12 +182,15 @@
     .shutter-inner { width: 56px; height: 56px; border-radius: 50%; background: #fff; }
     .shutter-hint { color: rgba(255,255,255,0.8); font-size: 13px; }
 
-    /* level slider (device tilt) */
-    #camLevel { position: absolute; top: calc(56px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; z-index: 25; pointer-events: none; }
-    #camLevelTrack { width: 200px; height: 2px; background: rgba(255,255,255,0.25); border-radius: 1px; position: relative; }
-    #camLevelDot { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 0 6px rgba(0,0,0,.4); }
+    /* Level slider (device tilt). Top RIGHT, not centred: centred it sat directly under the
+       scene badge and covered it. A tilt readout is glanced at, not read, so the corner costs it
+       nothing — and shrinking the track keeps the dot's travel obvious while freeing the middle
+       of the frame, which is the part of the shot the photographer is actually composing. */
+    #camLevel { position: absolute; top: calc(22px + env(safe-area-inset-top)); right: 12px; display: flex; align-items: center; gap: 7px; z-index: 25; pointer-events: none; }
+    #camLevelTrack { width: 112px; height: 2px; background: rgba(255,255,255,0.25); border-radius: 1px; position: relative; }
+    #camLevelDot { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 0 6px rgba(0,0,0,.4); }
     #camLevelDot.on { background: #66bb6a; box-shadow: 0 0 10px rgba(102,187,106,.7); }
-    #camLevelVal { font: 12px/1 monospace; color: rgba(255,255,255,.7); min-width: 34px; text-align: center; }
+    #camLevelVal { font: 11px/1 monospace; color: rgba(255,255,255,.7); min-width: 28px; text-align: right; }
     #camLevelVal.on { color: #66bb6a; }
     /* while a straighten cue is showing, the bar is the thing to look at */
     #camLevel.needs-fix #camLevelTrack { background: rgba(230,126,34,0.55); }
