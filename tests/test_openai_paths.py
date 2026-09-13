@@ -452,6 +452,34 @@ def test_hashtags_pass_through_without_length_enforcement(monkeypatch, scene_ima
     assert analyze_scene(scene_image)["hashtags"] == ["#one"]
 
 
+@pytest.mark.parametrize(
+    "returned, expected",
+    [
+        # What a live scan actually came back with — the symbol the prompt asks for, missing.
+        (["minimalism", "interior"], ["#minimalism", "#interior"]),
+        (["#cafevibes"], ["#cafevibes"]),                 # already correct, left alone
+        (["##double"], ["#double"]),                      # not doubled up
+        ([" spaced out "], ["#spacedout"]),               # a tag cannot contain a space
+        (["#咖啡馆"], ["#咖啡馆"]),                        # Chinese tags keep their symbol too
+        ([""], []),                                       # nothing usable — dropped, not "#"
+        (["#"], []),
+        ([None, 7, {"a": 1}], []),                        # wrong types dropped, no raise
+        ("not a list", []),
+        (None, []),
+    ],
+)
+def test_every_hashtag_comes_back_with_exactly_one_symbol(
+    monkeypatch, scene_image, returned, expected
+):
+    """The prompt asks for the # and the contract promises it, but the model drops it often enough
+    to notice — and it shows on the results screen and in the share text.
+
+    Normalised in the engine rather than the client: the contract is what makes the promise.
+    """
+    install(FakeClient(completion=completion(json.dumps({"hashtags": returned}))), monkeypatch)
+    assert analyze_scene(scene_image)["hashtags"] == expected
+
+
 def test_moderation_runs_before_the_opencv_work(monkeypatch, tmp_path):
     """A flagged image should not pay for feature extraction either.
 
