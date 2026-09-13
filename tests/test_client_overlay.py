@@ -255,6 +255,20 @@ def test_only_transient_huds_overlay_the_image():
     )
 
 
+def test_the_wordmark_outweighs_the_start_button():
+    """The button had grown into the biggest thing on the home screen, which put the emphasis on
+    "press this" rather than on the mark. Compares the smallest size the wordmark can take against
+    the button's full height, so it holds on the narrowest phone too."""
+    html = PAGE.read_text(encoding="utf-8")
+    char = re.search(r"\.char\s*\{[^}]*font-size:\s*clamp\((\d+)px", html)
+    assert char, "the wordmark no longer has a clamped font-size"
+    button = re.search(r"\.start-btn\s*\{[^}]*height:\s*(\d+)px", html)
+    assert button, "no height on the start button"
+    assert int(char.group(1)) > int(button.group(1)) * 1.4, (
+        f"wordmark {char.group(1)}px vs button {button.group(1)}px — the button dominates again"
+    )
+
+
 def test_the_controls_bar_lets_the_blurred_feed_through():
     """It always had a backdrop-filter, but at 0.88 alpha the tint did all the work and the blur
     behind it was invisible — so it read as the same black band the surround used to be."""
