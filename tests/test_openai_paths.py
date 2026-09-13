@@ -185,6 +185,31 @@ def test_prompt_asks_for_exactly_the_live_fields(monkeypatch):
     assert "pose_tips" not in prompt, "pose_tips was removed in contract 0.10"
 
 
+def test_the_hint_is_told_not_to_dictate_which_way_to_face(monkeypatch):
+    """Real scans came back telling people to face a window, or away from the camera.
+
+    The subject is being photographed, so they face the lens; a facing instruction is at best noise
+    and at worst asks for their back. The prompt used to *invite* it — one of its own examples ended
+    "facing the light" — so this pins the rule and the absence of that example.
+    """
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v")
+    prompt = prompt_text(client)
+    assert "NEVER tell them" in prompt and "which way to face" in prompt
+    assert "facing the light" not in prompt, "the prompt is modelling the behaviour it forbids"
+
+
+def test_the_hint_is_anchored_to_the_camera_that_took_the_photo(monkeypatch):
+    """The model sees one frame and has no idea it is the shot itself. Without saying so it picks
+    spots behind the camera, out of frame, or somewhere nobody can stand."""
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v")
+    prompt = prompt_text(client)
+    assert "the camera is not moving" in prompt
+    assert "behind the camera" in prompt
+    assert "as seen in this photo" in prompt, "left/right needs a stated frame of reference"
+
+
 @pytest.mark.parametrize("lang, expected", [("en", "ENGLISH"), ("zh", "SIMPLIFIED CHINESE")])
 def test_the_hashtag_line_names_the_language_itself(monkeypatch, lang, expected):
     """Mixed-language output looked like a bug, so the language is stated on the line itself.

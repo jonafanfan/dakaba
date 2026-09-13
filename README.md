@@ -81,6 +81,11 @@ the dimmer side so light falls on your face), plus a hard backlight veto. It was
 the marker it drove; see **Known issues** below for why, and `git show` on the commit that removed
 it if the heuristic itself is ever wanted back.
 
+Some of what it guaranteed is now *asked for* in the prompt instead — front or side light rather
+than a silhouette, a spot that is actually in frame and walkable, and no instruction about which
+way to face. Asking is weaker than computing: nothing server-side can check the sentence that comes
+back. `CONTRACT.md` §3.8 lists the constraints and says so plainly.
+
 ---
 
 ## Local development
@@ -154,7 +159,7 @@ preview can load the UI but not scan. To scan from a preview you'd need to add i
 .venv/Scripts/python -m pytest        # or bare `pytest`
 ```
 
-**262 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
+**264 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
 the fixture makes constructing a real one a test failure.
 
 The three `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
@@ -163,7 +168,7 @@ both were out-of-scope identifiers that only failed when the code actually ran.
 
 | File | Tests | Covers |
 |---|---|---|
-| [`test_openai_paths.py`](tests/test_openai_paths.py) | 81 | moderation, every degradation path, request shapes, `_encode_image`, the `lang` prompt |
+| [`test_openai_paths.py`](tests/test_openai_paths.py) | 83 | moderation, every degradation path, request shapes, `_encode_image`, the `lang` prompt |
 | [`test_assessments.py`](tests/test_assessments.py) | 40 | lighting, composition, blueprint — thresholds at their boundaries |
 | [`test_api.py`](tests/test_api.py) | 31 | endpoint guards: size cap, rate limit, error mapping, CORS, `lang` |
 | [`test_guidance.py`](tests/test_guidance.py) | 30 | dead-space tilt, the model's standing sentence, the client/engine filter agreement |

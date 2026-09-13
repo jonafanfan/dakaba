@@ -203,9 +203,20 @@ of"*, *"just behind"*, *"beside"*, *"level with"*): e.g. `"Stand next to the dra
 front of the blue door"`. Only the model can see there is a doorway or a bench worth standing near;
 nothing server-side supplies that.
 
+**What the prompt constrains**, because a hint can be well-formed and still useless:
+
+| Constraint | Why |
+|---|---|
+| Never says which way to face | The subject is being photographed, so they face the lens. Real scans came back asking people to face a window, or away from the camera. |
+| The spot must be in this frame and walkable | The model sees one image and does not otherwise know it is the shot itself, so it would pick spots behind the camera, out of frame, or on a road. |
+| `left` / `right` mean as seen in the photo | Otherwise it silently alternates between the viewer's left and the subject's. |
+| Prefer front or side light | Standing in front of a bright window silhouettes the subject. This is the one thing the removed backlight veto used to guarantee geometrically; it is now a preference the model is asked for rather than a hard constraint. |
+
 It is the only free-text field here that is not drawn from a closed set, so it is **validated, not
 trusted**: wrong type, empty, whitespace-only or over 60 characters all collapse to `""`, and the
-client then renders nothing. A sentence that overflows the panel is worse than no sentence.
+client then renders nothing. A sentence that overflows the panel is worse than no sentence. Note
+that the constraints above are *asked for*, not enforced — nothing server-side can tell whether a
+returned sentence honours them.
 
 > ⚠️ **Unlike the rest of the OpenCV-computed response, this field is entirely dependent on the
 > vision call.** It is also `""` whenever that call degrades (timeout, rate limit, refusal,
