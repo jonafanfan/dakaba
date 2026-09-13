@@ -269,17 +269,35 @@ def test_the_wordmark_outweighs_the_start_button():
     )
 
 
-def test_the_controls_bar_lets_the_blurred_feed_through():
-    """It always had a backdrop-filter, but at 0.88 alpha the tint did all the work and the blur
-    behind it was invisible — so it read as the same black band the surround used to be."""
+def test_the_controls_bar_adds_nothing_over_the_surround():
+    """Twice now the bar has been given a panel treatment and twice it read as a separate band.
+
+    It sits on the same full-screen blurred feed as the strip above the frame, so anything it
+    paints — a tint, however light, or a blur of its own at a second radius — makes the bottom of
+    the screen differ from the top. Transparent is the only version guaranteed to match, because
+    it is then literally the same pixels.
+    """
     html = PAGE.read_text(encoding="utf-8")
     rule = re.search(r"\.cam-controls\s*\{([^}]*)\}", html).group(1)
-    assert "backdrop-filter" in rule, "no blur behind the controls bar"
-    alpha = re.search(r"background: rgba\([^)]*?,\s*([\d.]+)\)", rule)
-    assert alpha, "the bar's background is no longer an rgba tint"
-    assert float(alpha.group(1)) < 0.6, (
-        f"tint is {alpha.group(1)} — opaque enough to hide the blur it sits on"
+    # Comments explain what the rule must NOT do, and naming a property there is not declaring it.
+    rule = re.sub(r"/\*.*?\*/", "", rule, flags=re.S)
+    background = re.search(r"background:\s*([^;]+);", rule)
+    assert background, "no background declared — is the rule still here?"
+    assert background.group(1).strip() == "transparent", (
+        f"the bar paints {background.group(1).strip()} over the surround"
     )
+    assert "backdrop-filter" not in rule, (
+        "a second blur at a different radius cannot match the one already behind it"
+    )
+    assert "border-top" not in rule, "a border draws a line the surround does not have"
+
+
+def test_the_controls_text_survives_losing_its_tint():
+    """Legibility came from the tint. Without one it has to come from the text itself, or small
+    labels vanish against a bright scene."""
+    html = PAGE.read_text(encoding="utf-8")
+    rule = re.search(r"\.cam-controls\s*\{([^}]*)\}", html).group(1)
+    assert "text-shadow" in rule, "nothing keeps the controls legible over a bright frame"
 
 
 def test_the_controls_bar_animates_its_height():

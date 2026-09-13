@@ -162,12 +162,20 @@
     }
     .cam-controls {
       flex: 0 1 auto; position: relative; z-index: 2;
-      /* Enough tint to keep white text legible over a moving picture, and no more: the blurred
-         feed behind it is what makes this a frosted panel rather than a black band. The feed is
-         already dimmed to 0.45 brightness by #videoBackdrop, so a light tint is sufficient. */
-      background: rgba(16,15,13,0.34);
-      backdrop-filter: blur(20px) saturate(0.9); -webkit-backdrop-filter: blur(20px) saturate(0.9);
-      border-top: 1px solid rgba(255,255,255,0.10);
+
+      /* No background and no blur of its own. The blurred feed already fills the whole screen
+         behind this, so the bar has nothing to add — it IS the surround, with controls on it.
+         Two earlier attempts got this wrong in the same way. A tint, however light, sits ON TOP
+         of the surround and makes the bottom of the screen visibly darker than the strip above
+         the frame, which reads as a separate panel. And its own backdrop-filter re-blurred an
+         already-blurred feed at a different radius, so even the texture did not match.
+         Transparent is the only version guaranteed to match, because it is the same pixels.
+
+         Legibility comes from a shadow on the text instead of a wash behind it: the backdrop is
+         dimmed to 0.45 brightness, and the one control that must never be missed — Take Photo —
+         carries its own solid fill. */
+      background: transparent;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.75);
       padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
 
@@ -199,10 +207,10 @@
 
     /* idle shutter */
     .cam-idle { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .shutter { width: 76px; height: 76px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 4px solid #fff; display: flex; align-items: center; justify-content: center; }
+    .shutter { width: 76px; height: 76px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 4px solid #fff; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 1px 5px rgba(0,0,0,0.55)); }
     .shutter:active { transform: scale(0.92); }
     .shutter-inner { width: 56px; height: 56px; border-radius: 50%; background: #fff; }
-    .shutter-hint { color: rgba(255,255,255,0.8); font-size: 13px; }
+    .shutter-hint { color: rgba(255,255,255,0.92); font-size: 13px; }
 
     /* Level slider (device tilt). Top RIGHT, not centred: centred it sat directly under the
        scene badge and covered it. A tilt readout is glanced at, not read, so the corner costs it
@@ -275,7 +283,7 @@
 
     .take-photo { width: 100%; height: 46px; background: var(--accent); color: #fff; border: none; font-family: inherit; font-size: 15px; font-weight: 600; border-radius: 100px; margin-bottom: 6px; }
     .take-photo:active { transform: scale(0.97); }
-    .rescan { display: block; text-align: center; color: rgba(255,255,255,0.6); font-size: 13px; padding: 4px; }
+    .rescan { display: block; text-align: center; color: rgba(255,255,255,0.78); font-size: 13px; padding: 4px; }
 
     /* ─── Results ─── */
     #results { background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
