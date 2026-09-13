@@ -260,8 +260,8 @@ def test_the_wordmark_outweighs_the_start_button():
     "press this" rather than on the mark. Compares the smallest size the wordmark can take against
     the button's full height, so it holds on the narrowest phone too."""
     html = PAGE.read_text(encoding="utf-8")
-    char = re.search(r"\.char\s*\{[^}]*font-size:\s*clamp\((\d+)px", html)
-    assert char, "the wordmark no longer has a clamped font-size"
+    char = re.search(r"--mark-size:\s*clamp\((\d+)px", html)
+    assert char, "the wordmark size token is gone, or is no longer clamped"
     button = re.search(r"\.start-btn\s*\{[^}]*height:\s*(\d+)px", html)
     assert button, "no height on the start button"
     assert int(char.group(1)) > int(button.group(1)) * 1.4, (
