@@ -61,7 +61,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      padding: 56px 32px calc(56px + env(safe-area-inset-bottom));
+      padding: 46px 32px calc(52px + env(safe-area-inset-bottom));
     }
     #home.active { display: flex; }
 
@@ -70,44 +70,44 @@
     }
 
     .hero { flex: 1; display: flex; align-items: center; justify-content: center; }
-    .viewfinder { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 28px; }
-    .corner { position: absolute; width: 30px; height: 30px; }
-    .corner-tl { top: -40px; left: -6px; border-top: 2px solid var(--text2); border-left: 2px solid var(--text2); }
-    .corner-tr { top: -40px; right: -6px; border-top: 2px solid var(--text2); border-right: 2px solid var(--text2); }
-    .corner-bl { bottom: -40px; left: -6px; border-bottom: 2px solid var(--text2); border-left: 2px solid var(--text2); }
-    .corner-br { bottom: -40px; right: -6px; border-bottom: 2px solid var(--text2); border-right: 2px solid var(--text2); }
+    .viewfinder { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 34px; }
+    .corner { position: absolute; width: 38px; height: 38px; }
+    .corner-tl { top: -46px; left: -8px; border-top: 3px solid var(--text2); border-left: 3px solid var(--text2); }
+    .corner-tr { top: -46px; right: -8px; border-top: 3px solid var(--text2); border-right: 3px solid var(--text2); }
+    .corner-bl { bottom: -46px; left: -8px; border-bottom: 3px solid var(--text2); border-left: 3px solid var(--text2); }
+    .corner-br { bottom: -46px; right: -8px; border-bottom: 3px solid var(--text2); border-right: 3px solid var(--text2); }
 
-    .hud { position: absolute; font-size: 9px; letter-spacing: 1px; color: var(--text2); }
-    .hud-rec { top: -32px; left: 4px; }
-    .hud-time { top: -28px; left: 50%; transform: translateX(-50%); }
-    .hud-bat { top: -34px; right: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-    .hud-bat-bar { width: 22px; height: 7px; border: 1px solid var(--text2); border-radius: 1px; padding: 1px; }
+    .hud { position: absolute; font-size: 11px; letter-spacing: 1px; color: var(--text2); }
+    .hud-rec { top: -38px; left: 2px; }
+    .hud-time { top: -34px; left: 50%; transform: translateX(-50%); }
+    .hud-bat { top: -41px; right: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .hud-bat-bar { width: 26px; height: 9px; border: 1px solid var(--text2); border-radius: 1px; padding: 1px; }
     .hud-bat-fill { width: 70%; height: 100%; background: var(--text2); }
-    .hud-format { bottom: -32px; right: 4px; }
+    .hud-format { bottom: -38px; right: 2px; }
 
     .title-block { display: flex; flex-direction: column; align-items: center; }
-    .char { font-family: "Noto Serif SC", serif; font-size: 76px; font-weight: 700; color: var(--text); line-height: 1.12; }
+    .char { font-family: "Noto Serif SC", serif; font-size: clamp(76px, 24vw, 96px); font-weight: 700; color: var(--text); line-height: 1.12; }
     .char-row { display: flex; padding-left: 48px; }
 
     /* Language is chosen on the way in, so the switch lives on the home screen only. A copy on
        every screen would put a settings control inside the viewfinder for something nobody
        changes mid-shoot. */
     .lang-toggle {
-      position: absolute; top: 44px; right: 22px;
-      display: flex; padding: 3px; gap: 2px;
+      position: absolute; top: 14px; right: 16px;
+      display: flex; padding: 2px; gap: 2px;
       border: 1px solid var(--text2); border-radius: 100px;
     }
     .lang-opt {
-      font-family: inherit; font-size: 12px; line-height: 1; padding: 7px 13px;
+      font-family: inherit; font-size: 11px; line-height: 1; padding: 6px 11px;
       border: none; background: none; color: var(--text2); border-radius: 100px;
     }
     .lang-opt.on { background: var(--accent); color: #fff; }
 
     .home-bottom { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
     .start-btn {
-      width: 100%; max-width: 360px; height: 54px;
+      width: 100%; max-width: 290px; height: 48px;
       background: var(--accent); color: #fff; border: none;
-      font-family: inherit; font-size: 17px; font-weight: 600; border-radius: 100px;
+      font-family: inherit; font-size: 16px; font-weight: 600; border-radius: 100px;
     }
     .start-btn:active { transform: scale(0.97); }
     .hint { font-size: 13px; color: var(--text2); }
