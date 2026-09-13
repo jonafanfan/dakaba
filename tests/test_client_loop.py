@@ -41,6 +41,9 @@ function el(id) {
     get textContent() { return ''; },
     innerHTML: '', value: '', files: [],
     clientWidth: 390, clientHeight: 844, width: 390, height: 844,
+    // Real enough for the controls bar, which measures itself to animate its own height.
+    getBoundingClientRect() { return { width: 390, height: 140, top: 0, left: 0, right: 390, bottom: 140 }; },
+    offsetHeight: 140,
     videoWidth: 1080, videoHeight: 1920, srcObject: null,
     getContext() {
       return {
