@@ -181,6 +181,30 @@ def _clean_hint(value) -> str:
     return hint if 0 < len(hint) <= 60 else ""
 
 
+def _clean_hashtags(value) -> list:
+    """The model's hashtags, each guaranteed to start with exactly one #.
+
+    The prompt asks for the symbol and the contract promises it, but the model returns bare words
+    often enough to notice — a live scan came back with ["minimalism", "interior", "wallframe"].
+    That reaches the results screen as pills and goes out in the share text, so it is visible.
+
+    Normalised here rather than in the client because the contract is what promises the #, and the
+    client is not the only thing that could read this. Anything that is not a usable string is
+    dropped: a hashtag of "" or "#" is worse than one fewer hashtag.
+    """
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for tag in value:
+        if not isinstance(tag, str):
+            continue
+        # Strip every leading # before adding one back, so "##x" does not survive as "##x".
+        body = "".join(tag.split()).lstrip("#")
+        if body:
+            cleaned.append("#" + body)
+    return cleaned
+
+
 def _detect_dead_space(saliency_map) -> dict:
     """Is a third of the frame carrying nothing? Then aim the camera off it.
 
@@ -478,6 +502,6 @@ def analyze_scene(image_path: str, lang: str = DEFAULT_LANGUAGE) -> dict:
         "placement":    features["placement"],
         "camera_tilt":  features["camera_tilt"],
         "placement_hint": _clean_hint(gpt.get("placement_hint")),
-        "hashtags":     gpt.get("hashtags", []),
+        "hashtags":     _clean_hashtags(gpt.get("hashtags")),
         "filter":       filter_name,
     }
