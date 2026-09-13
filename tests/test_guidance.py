@@ -1,101 +1,17 @@
-"""Tests for the two guidance signals: why the marker is where it is, and dead-space tilt.
+"""Tests for the two remaining guidance signals: dead-space tilt, and the model's placement hint.
 
-Both exist so the app can explain itself rather than showing an unexplained dot. The placement
-reason is derived from work the engine was already doing and throwing away; the dead-space check
-reuses the saliency map placement has already built.
+There used to be a third signal here, `_compute_placement`'s `reason` — why the standing marker
+landed where it did. The marker (and the geometry behind it) was removed: the app's only
+positioning guidance is now a single free-text sentence from the vision model
+(`placement_hint`), so there is no marker to explain any more. The dead-space check is unrelated
+to placement and reuses the same saliency map computation used to feed it.
 """
 import pathlib
 
 import numpy as np
 import pytest
 
-from scene_analysis import PLACEMENT_REASONS, _compute_placement, _detect_dead_space
-from conftest import LEFT_THIRD, RIGHT_THIRD, gray, saliency
-
-
-def reason(g, s):
-    return _compute_placement(g, s)["reason"]
-
-
-# ── the reason names the signal that actually decided ────────────────────────
-
-def test_backlight_veto_is_named_as_the_reason(flat_saliency):
-    """The veto is a hard constraint, so it owns the explanation whatever else voted."""
-    assert reason(gray(left=120, right=255), flat_saliency) == "backlight"
-    assert reason(gray(left=255, right=120), flat_saliency) == "backlight"
-
-
-def test_veto_beats_a_strong_opposing_vote_in_the_reason_too():
-    """Saliency votes right twice; the blown-out right vetoes it. The veto must be credited."""
-    interest_left = saliency(0.0, box=(0.0, 1.0, 0.0, 0.33))
-    result = _compute_placement(gray(left=120, right=255), interest_left)
-    assert result["x"] == LEFT_THIRD
-    assert result["reason"] == "backlight"
-
-
-def test_light_is_named_when_only_light_votes(flat_saliency):
-    """flat_saliency is deliberately unreliable, so light is the only signal in play."""
-    assert reason(gray(left=210, right=90), flat_saliency) == "light"
-    assert reason(gray(left=90, right=210), flat_saliency) == "light"
-
-
-def test_a_saliency_signal_is_named_when_only_saliency_votes(flat_gray):
-    """Uniform grey casts no light vote, so the reason must come from the saliency pair."""
-    interest_left = saliency(0.0, box=(0.0, 1.0, 0.0, 0.33))
-    assert reason(flat_gray, interest_left) in ("balance", "clean_background")
-
-
-def test_default_when_nothing_votes(flat_saliency):
-    """No usable saliency, no light asymmetry, no blowout — the tie-break decides, so no signal
-    can honestly be credited."""
-    assert reason(gray(left=128, right=130), flat_saliency) == "default"
-
-
-def test_a_losing_signal_is_never_credited():
-    """The reason must be a signal that pointed the way we actually went.
-
-    Saliency (2.0 combined) sends the subject right; light (1.2) wants left and loses. Crediting
-    light would be actively misleading — the marker would explain itself with the one reason that
-    argued against where it is.
-    """
-    interest_left = saliency(0.0, box=(0.0, 1.0, 0.0, 0.33))   # -> right
-    bright_right = gray(left=90, right=210)                     # -> left, and loses
-    result = _compute_placement(bright_right, interest_left)
-    assert result["x"] == RIGHT_THIRD
-    assert result["reason"] != "light"
-
-
-# ── the reason is always present and displayable ─────────────────────────────
-
-def test_every_reason_code_has_text():
-    for code, text in PLACEMENT_REASONS.items():
-        assert text and isinstance(text, str), code
-
-
-def test_reason_text_is_short_enough_to_draw_under_the_marker():
-    """These are rendered on the viewfinder on a phone. Long strings run off the frame."""
-    for code, text in PLACEMENT_REASONS.items():
-        assert len(text) <= 34, f"{code} is {len(text)} chars: {text!r}"
-
-
-def test_reason_and_text_always_agree():
-    rng = np.random.default_rng(7)
-    for _ in range(40):
-        g = gray(rng.uniform(20, 250), rng.uniform(0, 255), rng.uniform(0, 255))
-        s = saliency(rng.uniform(0, 0.5), (0, rng.uniform(0.2, 1.0), 0, rng.uniform(0.2, 1.0)))
-        result = _compute_placement(g, s)
-        assert result["reason"] in PLACEMENT_REASONS
-        assert result["reason_text"] == PLACEMENT_REASONS[result["reason"]]
-
-
-@pytest.mark.parametrize(
-    "bad", [np.zeros((4, 4, 3), dtype=np.float32), None, np.zeros((0, 0), dtype=np.float32)],
-    ids=["3d", "none", "empty"],
-)
-def test_fallback_still_carries_a_reason(flat_gray, bad):
-    result = _compute_placement(flat_gray, bad)
-    assert result["reason"] == "default"
-    assert result["reason_text"] == PLACEMENT_REASONS["default"]
+from scene_analysis import _detect_dead_space
 
 
 # ── dead space: aim off the empty third ──────────────────────────────────────
@@ -135,7 +51,7 @@ def test_a_mildly_quieter_third_is_not_dead():
 
 
 def test_a_flat_map_is_not_judged():
-    """Same reliability gate as placement: on a uniform map the thirds are all noise."""
+    """On a uniform map the thirds are all noise, so the reliability gate must hold here too."""
     assert _detect_dead_space(np.full((120, 160), 0.5, dtype=np.float32))["direction"] == "ok"
 
 
@@ -197,11 +113,11 @@ def test_direction_is_always_from_the_closed_set():
         assert _detect_dead_space(s)["direction"] in ("up", "down", "ok")
 
 
-# ── placement_hint: the model's depth sentence ───────────────────────────────
+# ── placement_hint: the model's standing sentence ────────────────────────────
 #
-# A flat marker says WHERE across the frame but nothing about how far INTO the scene to stand,
-# and the geometry cannot know there is a doorway to stand in front of. That is the model's job,
-# so this is the one field here that is free text rather than a closed set — hence the validation.
+# The app's only positioning guidance, now that there is no marker: one plain-English sentence,
+# e.g. "Stand next to the drawer". Free text rather than a closed set, and shown verbatim above
+# the shutter — hence the validation.
 
 from scene_analysis import _clean_hint
 

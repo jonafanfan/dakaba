@@ -4,9 +4,10 @@ The client is faked throughout — nothing here touches the network, and the aut
 constructing a real client an outright test failure rather than a silent API call.
 
 What matters here is failure behaviour. The engine's stated design is that a bad completion
-degrades to safe defaults instead of failing the scan, because the OpenCV half (placement,
-framing, lighting, blur) is the part carrying the product; the model only supplies the scene name,
-hashtags and filter choice. These tests pin down where that promise holds and where it does not.
+degrades to safe defaults instead of failing the scan, because the OpenCV half (composition,
+lighting, blur, camera tilt) does not need the model at all; the model only supplies the scene
+name, hashtags, filter choice and the standing guide (placement_hint). These tests pin down where
+that promise holds and where it does not.
 """
 import base64
 import io
@@ -287,7 +288,7 @@ def test_api_errors_degrade_instead_of_raising(monkeypatch, error):
     """A dead API must cost the scene label, not the whole scan.
 
     The OpenCV features are already computed by the time this runs, so raising here would discard
-    work that succeeded and break placement and framing — neither of which needs the model.
+    work that succeeded and break composition and lighting — neither of which needs the model.
     """
     install(FakeClient(completion_error=error), monkeypatch)
     assert _analyze_with_gpt("Zm9v") == {}
@@ -316,7 +317,7 @@ def test_api_error_still_yields_a_usable_scan(monkeypatch, scene_image):
     assert result["scene_type"] == "Unknown"
     assert result["hashtags"] == []
     assert result["filter"] == "Vivid"
-    assert result["placement"]["x"] in (round(1 / 3, 3), round(2 / 3, 3))
+    assert result["placement_hint"] == "", "a dead API must not invent a standing guide"
     assert result["lighting"]["quality"] in ("Good", "Fair", "Poor")
     assert isinstance(result["blurry"], bool)
 
@@ -398,8 +399,8 @@ def test_empty_gpt_result_falls_back_to_safe_defaults(monkeypatch, scene_image):
     assert result["scene_type"] == "Unknown"
     assert result["hashtags"] == []
     assert result["filter"] == "Vivid"
-    # and the OpenCV half — the part that actually carries the product — is intact
-    assert result["placement"]["x"] in (round(1 / 3, 3), round(2 / 3, 3))
+    # and the OpenCV half — the part that does not need the model — is intact
+    assert result["placement_hint"] == ""
     assert result["lighting"]["quality"] in ("Good", "Fair", "Poor")
     assert isinstance(result["blurry"], bool)
 
@@ -426,7 +427,7 @@ def test_response_keys_match_the_contract(monkeypatch, scene_image):
     install(FakeClient(completion=completion("{}")), monkeypatch)
     assert set(analyze_scene(scene_image)) == {
         "scene_type", "blueprint", "lighting", "blurry", "blur_var", "edge_sharpness",
-        "composition", "placement", "camera_tilt", "placement_hint", "hashtags", "filter",
+        "composition", "camera_tilt", "placement_hint", "hashtags", "filter",
     }
 
 

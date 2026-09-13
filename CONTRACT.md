@@ -1,27 +1,41 @@
 # `/analyze` Response Contract
 
-**Owner:** AI Engine (@Zuil909) · **Consumers:** `web/index.html` · **Version:** `0.14` (shipped)
+**Owner:** AI Engine (@Zuil909) · **Consumers:** `web/index.html` · **Version:** `0.15` (shipped)
 
 > **Recent changes**
+>
+> - **`0.15` — the standing marker and `placement` are gone (breaking).** There is no more
+>   in-frame marker or subject tracking: the app's entire positioning guidance is now
+>   `placement_hint`, a single sentence shown once above the shutter. `placement`
+>   (`{x, y, reason, reason_text}`) and `_compute_placement` are removed outright, not deprecated.
+>   `placement_hint` itself changes meaning: it used to supply *depth only*, on the assumption the
+>   marker already showed left/right; it now has to carry the whole instruction (e.g. "Stand next
+>   to the drawer"), and it is no longer told which side any geometry picked, because there is no
+>   geometry left to agree with. **Consequence for consumers:** positioning guidance is now
+>   entirely dependent on the vision call — see §3.6. `camera_tilt` (§3.7) is unaffected; it is
+>   about camera aim, not standing position, and `lang` (`0.14`) still applies to `placement_hint`.
 >
 > - **`0.14` — request field `lang` (additive, optional).** `POST /analyze` accepts a `lang` form
 >   field of `en` (default) or `zh`. It decides the language of the three model-written fields —
 >   `scene_type`, `hashtags`, `placement_hint` — which previously drifted between English and
 >   Chinese within a single response. A request without it, or with a value the engine does not
 >   know, behaves exactly as before. **Not affected:** `filter` is always an English keyword, and
->   `placement.reason_text` / `camera_tilt.reason` stay English — both carry a stable machine key
->   (`placement.reason`, `camera_tilt.direction`) that the client translates itself, so no paid
->   call is spent on a sentence the client already knows. See §3.6.
+>   `camera_tilt.reason` stays English — it carries a stable machine key (`camera_tilt.direction`)
+>   that the client translates itself, so no paid call is spent on a sentence the client already
+>   knows. See §3.6. *(This entry also covered `placement.reason_text` the same way; `placement`
+>   was removed in `0.15`.)*
 >
 > - **`0.13` — `placement_hint` (additive).** One short model-written instruction saying where to
 >   stand, anchored to something visible and expressing **depth** — the thing a flat marker cannot
 >   show. The model is told which side the geometry chose, so its wording cannot contradict the
 >   marker. Free text, so it is validated server-side: anything unusable becomes `""`. See §3.8.
+>   *(Superseded by `0.14` — the "which side the geometry chose" part no longer applies.)*
 >
 > - **`0.12` — the engine now explains itself (additive).** `placement` gains `reason` (closed
 >   enum) and `reason_text` (short display string) naming the signal that actually decided the
 >   side, and a new top-level `camera_tilt` reports dead space in the frame. Purely additive:
->   existing consumers reading `placement.x` / `.y` are unaffected. See §3.1 and §3.7.
+>   existing consumers reading `placement.x` / `.y` are unaffected. *(`placement` itself was
+>   removed in `0.15` — see the note at the top of §3 — but `camera_tilt` remains; see §3.7.)*
 >
 > - **`0.11` — a failing vision call no longer `500`s the scan.** Previously an OpenAI timeout,
 >   rate limit, auth failure or outage propagated and became a `500`, discarding OpenCV work that
@@ -101,14 +115,10 @@ Every field below is always present on a `200`. There are no optional keys.
   "blur_var":       184.3,      // diagnostic — for tuning the blur gate
   "edge_sharpness": 21.47,      // diagnostic — for tuning the blur gate
 
-  "placement":      { "x": 0.667, "y": 0.667,
-                      "reason": "light",
-                      "reason_text": "Light falls on your face" },
-
   "camera_tilt":    { "direction": "down",
                       "reason": "Empty space above — aim a little lower" },
 
-  "placement_hint": "Stand in front of the blue door",
+  "placement_hint": "Stand next to the drawer",
 
   "hashtags":       ["#cafevibes", "#coffeetime", "#goldenhour"],
 
@@ -120,39 +130,11 @@ Every field below is always present on a `200`. There are no optional keys.
 
 ## 3. Field reference
 
-### 3.1 `placement` — where the subject should stand *(drives the standing marker)*
-
-| Field | Type | Notes |
-|---|---|---|
-| `x` | number | **snapped to a rule-of-thirds line: `0.333` or `0.667`** |
-| `y` | number | one of `0.62`, `0.667`, `0.70` — adapts to where saliency mass sits vertically |
-| `reason` | enum | which signal decided the side — closed set below |
-| `reason_text` | string | short display string for `reason`, ≤ 34 chars, safe to show verbatim |
-
-Closed `reason` set — the client may switch on these, and must fall back to showing `reason_text`
-for anything unrecognised:
-
-```
-backlight   light   balance   clean_background   default
-```
-
-`reason` names a signal that voted **the way the marker actually went**. A signal that argued the
-other way and lost is never credited, because explaining the marker with the one argument against
-its position would be worse than saying nothing. `backlight` always wins when the veto fires, since
-it is a hard constraint rather than a vote. `default` means the tie-break decided and no signal can
-honestly be credited.
-
-Computed by [`_compute_placement`](scene_analysis.py#L56-L154), which fuses three gated signals —
-visual **balance** (stand opposite the scene's focal mass), background **cleanliness** (prefer the
-side whose body-band is emptier), and **light direction** (stand on the dimmer side so light falls
-on the face) — plus a hard **backlight veto** so the subject is never placed in front of a
-blown-out region. Never raises; falls back to `{0.667, 0.667}`.
-
-> ⚠️ **This is a composition target, not a point to aim the camera at.** `x` is already snapped to
-> a thirds line for the framing that was scanned. Panning the camera until this point reaches
-> screen-centre would drag the subject to dead-centre and discard the placement the engine solved
-> for. Draw it as a fixed in-frame marker. (This exact confusion was a live bug; see the
-> `standPos` / `aim` comment block in `index.html`.)
+> **What happened to `placement`?** It was the `{x, y, reason, reason_text}` geometry driving the
+> old standing marker — computed by `_compute_placement`, fusing visual balance, background
+> cleanliness, light direction and a backlight veto. Removed in `0.15` along with the marker
+> itself; nothing in the response replaces its geometry. `placement_hint` (§3.8) is now the whole
+> of the app's positioning guidance.
 
 ### 3.2 `lighting` — *(gates capture)*
 
@@ -201,29 +183,35 @@ against `blur_var` / `edge_sharpness` from real photos. See
 
 `"down"` means aim **lower**, because the dead space is *above* — blank ceiling or featureless sky
 eating the top of the frame. Computed by comparing the visual interest in the top, middle and
-bottom thirds of the saliency map placement already builds, so it costs one extra pass over an
-array in memory and no extra tokens.
+bottom thirds of the same saliency map already built elsewhere in the scan, so it costs one extra
+pass over an array in memory and no extra tokens.
 
 Deliberately conservative: a band must carry under **45%** of the rest of the frame's interest
 *and* be emptier than the opposite band, and the whole check is skipped on a flat, low-contrast
 map. Otherwise the cue fires on ordinary scenes and gets ignored.
 
-### 3.8 `placement_hint` — where to stand, in words *(shown above the shutter)*
+### 3.8 `placement_hint` — where to stand, in words *(the app's only positioning guidance)*
 
 | Field | Type | Notes |
 |---|---|---|
 | `placement_hint` | string | ≤ 60 chars, no trailing full stop; **`""` when unusable** |
 
-`placement` and the marker give the position **across** the frame. Neither can express how far
-**into** the scene to stand, and the geometry has no idea there is a doorway or a bench to stand in
-front of — only the model sees that. So this is asked for in the same vision call, phrased around
-depth (*"in front of"*, *"just behind"*, *"level with"*), and the model is told which side the
-engine picked so its sentence cannot contradict the marker.
+Since `0.15` this is the entire standing guide — there is no marker and no geometry behind it. The
+model is asked for one short instruction anchored to something actually visible in the photo (a
+door, a window, a bench), and — where it matters — to make the **depth** clear too (*"in front
+of"*, *"just behind"*, *"beside"*, *"level with"*): e.g. `"Stand next to the drawer"`, `"Stand in
+front of the blue door"`. Only the model can see there is a doorway or a bench worth standing near;
+nothing server-side supplies that.
 
 It is the only free-text field here that is not drawn from a closed set, so it is **validated, not
 trusted**: wrong type, empty, whitespace-only or over 60 characters all collapse to `""`, and the
-client then renders nothing. A sentence that overflows the panel is worse than no sentence. It is
-also `""` whenever the model call degrades — see §3.6.
+client then renders nothing. A sentence that overflows the panel is worse than no sentence.
+
+> ⚠️ **Unlike the rest of the OpenCV-computed response, this field is entirely dependent on the
+> vision call.** It is also `""` whenever that call degrades (timeout, rate limit, refusal,
+> unparseable output — see §3.6) — meaning a degraded scan now has **no** positioning guidance at
+> all, where it previously still had a marker computed from OpenCV alone. There is no fallback
+> geometry to fall back to any more.
 
 ### 3.4 `composition` — descriptive assessment
 
@@ -259,10 +247,12 @@ failure mode yields `{}` and each field falls back to its default rather than fa
 - valid JSON that is not an object (an array, string, number or `null`)
 - an **API-level failure** — timeout, rate limit, auth failure, outage *(new in `0.11`)*
 
-This is deliberate rather than incidental. The measured half of the response — `placement`,
-`composition`, `lighting`, `blueprint`, `blurry` — is computed by OpenCV before the vision call and
+This is deliberate rather than incidental. The measured half of the response — `composition`,
+`lighting`, `blueprint`, `blurry`, `camera_tilt` — is computed by OpenCV before the vision call and
 does not depend on the model at all, so an OpenAI incident costs the scene label and hashtags while
-leaving positioning and framing fully intact.
+leaving those fields fully intact. **`placement_hint` is the one exception**: since `0.15` it is
+the app's only positioning guidance and it comes exclusively from this call, so an OpenAI incident
+now also costs positioning — there is no OpenCV-computed fallback left for it.
 
 > **The corollary for consumers:** a `200` is *not* proof the model ran. A response where
 > `scene_type` is `"Unknown"`, `hashtags` is `[]` and `filter` is `"Vivid"` is indistinguishable
@@ -342,12 +332,13 @@ The client treats a missing `lighting` key as a bad response regardless of statu
 | `lighting.quality` | ✅ | capture gate — `Poor` blocks |
 | `blurry` | ✅ | capture gate — `true` blocks |
 | `scene_type` | ✅ | badge on camera + results |
-| `placement` | ✅ | fixed standing marker |
+| `placement_hint` | ✅ | static text above the shutter |
+| `camera_tilt` | ✅ | live tilt/straighten cue |
+| `composition.horizon` | ✅ | live straighten cue (via the phone's own roll sensor) |
 | `filter` | ✅ | preview + baked into the saved pixels |
 | `hashtags` | ✅ | tappable pills, copy-all, share text |
 | `lighting` (presence) | ✅ | response-validity check |
 | `lighting.tip` | — | generated, not shown |
-| `composition` | — | generated, not shown |
 | `blueprint` | — | generated, not shown |
 | `blur_var`, `edge_sharpness` | — | diagnostics, for tuning only |
 
@@ -355,9 +346,11 @@ The client treats a missing `lighting` key as a bad response regardless of statu
 
 1. All coords are normalized, top-left origin, `[0,1]`.
 2. `filter` comes only from the closed set in §3.6; unknown values must fall back, not throw.
-3. `placement` is an in-frame composition target — render it fixed, never chase it with the camera.
-4. Live device roll (the level slider) is entirely client-owned, read from `devicemotion`. The
-   engine reports **scene** tilt via `composition.horizon`. Don't merge the two into one indicator.
+3. `placement_hint` is free text from the model — render it verbatim, but treat `""` as "nothing to
+   show", not an error.
+4. Live device roll (the level slider, and the straighten cue) is entirely client-owned, read from
+   `devicemotion`. The engine reports **scene** tilt via `composition.horizon`. Don't merge the two
+   into one indicator.
 
 **Known gaps** (cheap, additive, worth doing)
 
@@ -366,9 +359,8 @@ The client treats a missing `lighting` key as a bad response regardless of statu
 - `lighting.tip` is computed on every scan and thrown away. It costs nothing (pure OpenCV, no
   tokens), so this is a UI gap rather than waste — unlike `pose_tips`, which did cost tokens and
   was removed in `0.10`.
-- Under the current product thesis — positioning, framing and colour grading are what matter —
-  `composition` and `blueprint` are the fields most worth surfacing next: `composition.horizon`
-  and `blueprint.notes` speak directly to framing, and both are already computed.
+- `blueprint.notes` speaks directly to framing and is already computed but unused — the next
+  natural thing to surface, now that `placement` no longer covers that ground.
 
 ---
 
@@ -401,9 +393,9 @@ Feasibility from today's code:
 | Sub-object | Status |
 |---|---|
 | `level` | **Easy** — `features["alignment"]` already exists; `needs_straightening` is `alignment < 0.7` |
-| `target` | **Easy** — `placement` already is the nearest strong thirds point |
-| `subject` | **Needs live tracking.** `/analyze` is one-shot on an *empty* scene, so there is no subject to detect. This only becomes meaningful with in-browser per-frame tracking |
-| `guidance` | Depends on `subject` — it is `target − subject`, so it needs the above first |
+| `target` | **No longer easy.** Used to reuse `placement`'s nearest-thirds-point geometry; since `0.15` removed that geometry entirely, this would need new positioning math from scratch, not just repackaging |
+| `subject` | **Needs live tracking.** `/analyze` is one-shot on an *empty* scene, so there is no subject to detect. This only becomes meaningful with in-browser per-frame tracking — which the app briefly had (MediaPipe pose, removed alongside the marker in `0.15`; see README's Known issues) and could revisit |
+| `guidance` | Depends on both `target` and `subject` above, so it needs both rebuilt first |
 
 > If `guidance` is ever built, settle the sign convention **first**: `move_subject_*` moves the
 > subject in-frame; moving the *camera* is the opposite direction. Pick one and name it explicitly.
@@ -439,6 +431,8 @@ our branding on it.)
 
 - **Lens awareness.** The 0.5× ultra-wide toggle is a client-side capture concern; `/analyze` is
   not lens-aware and has no `lens` request field. Revisit only if ultra-wide distortion is found
-  to skew placement advice.
-- **Real-time tracking in the engine.** `/analyze` is one-shot per scan. Any live tracking is
-  client-owned polish layered on top of `placement`, not an engine dependency.
+  to skew the standing guide.
+- **Real-time tracking in the engine.** `/analyze` is one-shot per scan. Any live tracking would be
+  client-owned polish, not an engine dependency — see README's Known issues for why the app's
+  previous attempt at this (MediaPipe pose tracking against the marker) was removed rather than
+  kept.

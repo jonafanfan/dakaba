@@ -2,8 +2,12 @@
 
 Hashtags used to come back in Chinese on some scans and English on others, so the app now states a
 language instead of hoping. The half that matters here is the client: the string table, the switch
-itself, and the engine's own sentences (the marker caption and the tilt cue), which are translated
-from the machine key the engine sends rather than by asking the model again.
+itself, and the tilt cue, which is translated from the machine key (`camera_tilt.direction`) the
+engine sends rather than by asking the model again.
+
+The marker caption used to be translated the same way, from `placement.reason`. Both the marker and
+that field are gone — the standing guide is now `placement_hint`, free text the model writes
+directly in the chosen language, so there is no key to translate for it.
 
 The harness is `test_client_loop`'s — a stubbed DOM and real node. It cannot tell you the Chinese
 reads well; it can tell you nothing is left in English by accident, which is the failure the user
@@ -46,13 +50,13 @@ def test_the_english_table_is_not_empty_of_the_things_it_must_cover():
     while checking nothing."""
     en = strings("en")
     assert len(en) > 30, f"only found {len(en)} strings — is the table still being parsed?"
-    for prefix in ("cue.", "reason.", "tilt.", "res.", "toast.", "err."):
+    for prefix in ("cue.", "tilt.", "res.", "toast.", "err."):
         assert any(k.startswith(prefix) for k in en), f"no {prefix} strings found"
 
 
 def test_the_page_falls_back_to_english_for_an_unknown_language():
-    out = run("lang = 'fr'; console.log(JSON.stringify({ cue: tr('cue.perfect') }));")
-    assert out["cue"] == "Perfect — take the photo"
+    out = run("lang = 'fr'; console.log(JSON.stringify({ cue: tr('cue.straighten') }));")
+    assert out["cue"] == "Straighten the camera"
 
 
 def test_an_unknown_key_returns_the_key_rather_than_blank():
@@ -66,14 +70,14 @@ def test_an_unknown_key_returns_the_key_rather_than_blank():
 def test_switching_language_changes_the_live_cues():
     """The cue is the product. This is the end-to-end check that a switch reaches it."""
     out = run(SCAN + """
-      tracker.landmarker = {}; streak = CONFIRM_FRAMES;
-      subject.seen = true; subject.x = 0.667; subject.y = 0.667;
-      applyLang('en'); liveLoop(1234);
+      needsStraightening = true; liveLean = 20;
+      applyLang('en'); liveLoop();
       const english = cues[cues.length - 1];
-      applyLang('zh'); liveLoop(1235);
+      needsStraightening = true;            // the loop latches it off once level; reopen it
+      applyLang('zh'); liveLoop();
       console.log(JSON.stringify({ english, chinese: cues[cues.length - 1] }));
     """)
-    assert out["english"] == "Perfect — take the photo"
+    assert out["english"] == "Straighten the camera"
     assert CJK.search(out["chinese"]), f"cue stayed English after the switch: {out['chinese']!r}"
 
 
@@ -94,7 +98,7 @@ def test_a_browser_that_refuses_storage_still_switches():
       globalThis.localStorage = { getItem() { throw new Error('denied'); },
                                   setItem() { throw new Error('denied'); } };
       applyLang('zh');
-      console.log(JSON.stringify({ lang, cue: tr('cue.perfect') }));
+      console.log(JSON.stringify({ lang, cue: tr('cue.straighten') }));
     """)
     assert out["lang"] == "zh"
     assert CJK.search(out["cue"])
@@ -120,48 +124,13 @@ def test_every_data_i18n_key_exists_in_the_table():
 
 # ── the engine's own sentences ───────────────────────────────────────────────
 
-REASONS = ["backlight", "light", "balance", "clean_background", "default"]
-
-
-@pytest.mark.parametrize("reason", REASONS)
-def test_the_marker_caption_is_translated_from_its_key(reason):
-    """The engine sends both a key and an English sentence. Translating from the key is what makes
-    the caption Chinese without a second paid call to relabel a scene already analysed."""
-    out = run(f"""
-      applyLang('zh');
-      analysisResult = {{
-        placement: {{ x: 0.333, y: 0.70, reason: '{reason}', reason_text: 'English fallback' }},
-        camera_tilt: {{ direction: 'ok', reason: '' }},
-        composition: {{}}, lighting: {{}}, hashtags: [], filter: 'Vivid',
-      }};
-      beginCoaching(analysisResult);
-      console.log(JSON.stringify({{ standReason }}));
-    """)
-    assert CJK.search(out["standReason"]), f"caption stayed English: {out['standReason']!r}"
-
-
-def test_an_unknown_reason_keeps_the_engines_own_wording():
-    """Forward compatibility: a reason added to the engine before the client knows about it must
-    still say something true, not fall back to a generic line."""
-    out = run("""
-      applyLang('zh');
-      analysisResult = {
-        placement: { x: 0.333, y: 0.70, reason: 'newly_invented', reason_text: 'Something new' },
-        camera_tilt: { direction: 'ok', reason: '' },
-        composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
-      };
-      beginCoaching(analysisResult);
-      console.log(JSON.stringify({ standReason }));
-    """)
-    assert out["standReason"] == "Something new"
-
-
 @pytest.mark.parametrize("direction", ["up", "down"])
 def test_the_tilt_cue_is_translated_from_its_direction(direction):
+    """The engine sends both a machine key and an English sentence. Translating from the key is what
+    makes the cue Chinese without a second paid call to relabel a scene already analysed."""
     out = run(f"""
       applyLang('zh');
       analysisResult = {{
-        placement: {{ x: 0.333, y: 0.70, reason: 'light', reason_text: 'x' }},
         camera_tilt: {{ direction: '{direction}', reason: 'English fallback' }},
         composition: {{}}, lighting: {{}}, hashtags: [], filter: 'Vivid',
       }};
@@ -169,6 +138,37 @@ def test_the_tilt_cue_is_translated_from_its_direction(direction):
       console.log(JSON.stringify({{ tiltHint }}));
     """)
     assert CJK.search(out["tiltHint"]), f"tilt cue stayed English: {out['tiltHint']!r}"
+
+
+def test_an_unknown_tilt_direction_keeps_the_engines_own_wording():
+    """Forward compatibility: a direction added to the engine before the client knows about it must
+    still say something true, not fall back to a generic line."""
+    out = run("""
+      applyLang('zh');
+      analysisResult = {
+        camera_tilt: { direction: 'newly_invented', reason: 'Something new' },
+        composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
+      };
+      beginCoaching(analysisResult);
+      console.log(JSON.stringify({ tiltHint }));
+    """)
+    assert out["tiltHint"] == "Something new"
+
+
+def test_the_standing_guide_is_shown_as_the_model_wrote_it():
+    """placement_hint is free text the model already wrote in the chosen language, so the client
+    must render it verbatim rather than looking for a key that does not exist."""
+    out = run("""
+      applyLang('zh');
+      analysisResult = {
+        camera_tilt: { direction: 'ok', reason: '' },
+        composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
+        placement_hint: '站在抽屉旁边',
+      };
+      beginCoaching(analysisResult);
+      console.log(JSON.stringify({ hint: hints[hints.length - 1] }));
+    """)
+    assert out["hint"] == "站在抽屉旁边"
 
 
 # ── what goes to the server ──────────────────────────────────────────────────

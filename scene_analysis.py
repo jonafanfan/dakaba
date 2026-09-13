@@ -46,125 +46,12 @@ EDGE_SHARPNESS_MIN = 8.0      # mean |Laplacian| at edges below this = genuinely
 # here, because "SIMPLIFIED CHINESE" alone produced the occasional traditional character.
 #
 # Filter names are deliberately NOT translated: the client looks them up in FILTER_CSS by exact
-# string, so they are contract values rather than prose. The same goes for PLACEMENT_REASONS below
-# — each one has a stable key, so the client translates them without a second call to the model.
+# string, so they are contract values rather than prose.
 RESPONSE_LANGUAGES = {
     "en": "ENGLISH",
     "zh": "SIMPLIFIED CHINESE (简体中文)",
 }
 DEFAULT_LANGUAGE = "en"
-
-
-# Why the marker landed where it did. Kept short — this is drawn under the marker on a phone, so
-# anything much longer than this wraps or runs off the frame.
-PLACEMENT_REASONS = {
-    "backlight":        "Out of the window glare",
-    "light":            "Light falls on your face",
-    "balance":          "Balances the busy side",
-    "clean_background": "Cleaner background here",
-    "default":          "Classic rule-of-thirds spot",
-}
-
-
-def _compute_placement(gray, saliency_map) -> dict:
-    """Where a standing subject should stand -> normalized {x, y}, top-left origin, plus WHY.
-
-    Fuses cheap signals — visual BALANCE (counterweight the scene's focal mass), background
-    CLEANLINESS (over the vertical band the body occupies), and LIGHT direction (stand on the
-    dimmer side so the light falls on the face) — each gated to only vote when it's reliable for
-    this scene, plus a hard BACKLIGHT VETO (never stand in front of a blown-out region, which
-    would silhouette the subject). x snaps to a rule-of-thirds line. Never raises; falls back
-    to {2/3, 2/3}.
-
-    `reason` names the signal that actually decided the side, so the client can explain the marker
-    rather than showing an unexplained dot. The work was already being done and thrown away.
-    """
-    FALLBACK = {
-        "x": round(2 / 3, 3), "y": round(2 / 3, 3),
-        "reason": "default", "reason_text": PLACEMENT_REASONS["default"],
-    }
-    try:
-        sal = np.asarray(saliency_map, dtype=np.float32)
-        g = np.asarray(gray, dtype=np.float32)
-        if sal.ndim != 2 or g.ndim != 2 or sal.size == 0:
-            return FALLBACK
-        H, W = sal.shape
-        X_LEFT, X_RIGHT = 1 / 3, 2 / 3
-
-        # Only trust a signal when it's meaningful for THIS scene (avoids deciding on noise).
-        saliency_reliable = sal.std() > 0.010 and (float(sal.max()) - float(sal.min())) > 0.05
-        light_reliable = float(g.mean()) > 40.0
-
-        # Each signal's signed vote, kept separately rather than summed into one number, so the
-        # winning signal can be named afterwards. +ve -> right (2/3), -ve -> left (1/3).
-        contributions = {}
-
-        if saliency_reliable:
-            # Balance: stand opposite the scene's horizontal focal centre of mass.
-            col = sal.sum(axis=0)
-            tot = float(col.sum())
-            cx = (float((np.arange(W) * col).sum() / tot) / W) if tot > 1e-6 else 0.5
-            contributions["balance"] = 1.0 if cx < 0.5 else -1.0
-            # Cleanliness: prefer the side whose body-band background is emptier.
-            top = int(H * 0.30)
-
-            def _clutter(nx):
-                c = int(nx * W)
-                return float(sal[top:, max(0, c - W // 6):min(W, c + W // 6)].mean())
-
-            contributions["clean_background"] = 1.0 if _clutter(X_RIGHT) < _clutter(X_LEFT) else -1.0
-
-        if light_reliable:
-            # Light: stand on the DIMMER side so the brighter side lights the face.
-            lb = float(g[:, :W // 2].mean())
-            rb = float(g[:, W // 2:].mean())
-            if abs(rb - lb) / (lb + rb + 1e-6) > 0.04:
-                contributions["light"] = 1.2 if lb > rb else -1.2
-
-        votes = sum(contributions.values())
-
-        # Backlight veto: a blown-out half silhouettes the subject -> forbid standing there.
-        hot = g > 245
-        lhot = float(hot[:, :W // 2].mean())
-        rhot = float(hot[:, W // 2:].mean())
-        HOT = 0.06
-        reason = None
-        if rhot > HOT and rhot > lhot * 1.5:
-            right = False
-            reason = "backlight"
-        elif lhot > HOT and lhot > rhot * 1.5:
-            right = True
-            reason = "backlight"
-        elif votes > 0.15:
-            right = True
-        elif votes < -0.15:
-            right = False
-        else:
-            right = not (rhot > lhot)   # no confident signal: avoid the hotter half; tie -> right
-        x = X_RIGHT if right else X_LEFT
-
-        if reason is None:
-            # Credit the strongest signal that actually pointed the way we went. A signal that
-            # voted the other way and lost is not the reason, even if it was the loudest.
-            agreeing = {k: abs(v) for k, v in contributions.items() if v != 0 and (v > 0) == right}
-            reason = max(agreeing, key=agreeing.get) if agreeing else "default"
-
-        # Headroom: adapt y to where the saliency mass sits vertically.
-        y = 2 / 3
-        if saliency_reliable:
-            m = float(sal.mean()) + 1e-6
-            if float(sal[:H // 3].mean()) > 1.6 * m:
-                y = 0.70
-            elif float(sal[2 * H // 3:].mean()) > 1.8 * m:
-                y = 0.62
-        return {
-            "x": round(float(x), 3),
-            "y": round(min(0.72, max(0.60, y)), 3),
-            "reason": reason,
-            "reason_text": PLACEMENT_REASONS[reason],
-        }
-    except Exception:
-        return FALLBACK
 
 
 def _clean_hint(value) -> str:
@@ -255,18 +142,15 @@ def _moderate_image(b64: str) -> bool:
         return True
 
 
-def _analyze_with_gpt(b64: str, placement: dict | None = None,
-                      lang: str = DEFAULT_LANGUAGE) -> dict:
-    """Scene name, filter and hashtags from the vision model. Never raises — returns {} instead.
+def _analyze_with_gpt(b64: str, lang: str = DEFAULT_LANGUAGE) -> dict:
+    """Scene name, filter, hashtags and the standing guide, from the vision model.
 
-    Every failure mode degrades to {}, which analyze_scene turns into safe defaults
-    (scene_type "Unknown", no hashtags, filter "Vivid"). That matters because the OpenCV half of
-    the scan — placement, framing, lighting, blur — does not depend on the model at all, so an
-    OpenAI incident should cost the scene label, not the whole feature.
+    Never raises — returns {} instead. Every failure mode degrades to {}, which analyze_scene
+    turns into safe defaults (scene_type "Unknown", no hashtags, filter "Vivid", no placement
+    guide). That matters because the OpenCV half of the scan — lighting, blur, composition — does
+    not depend on the model at all, so an OpenAI incident should cost the scene label and the
+    standing guide, not the whole feature.
     """
-    # Tell the model which side the geometry already picked, so its sentence agrees with the
-    # marker instead of contradicting it. extract_features runs before this call, so it is known.
-    side = "left" if (placement or {}).get("x", 0.667) < 0.5 else "right"
     # An unknown language falls back rather than failing the scan: the OpenCV half of the
     # result is already computed and does not care what language anything is written in.
     language = RESPONSE_LANGUAGES.get(lang, RESPONSE_LANGUAGES[DEFAULT_LANGUAGE])
@@ -290,16 +174,15 @@ def _analyze_with_gpt(b64: str, placement: dict | None = None,
                         f"- \"hashtags\": array of exactly 3 relevant hashtags with # symbol, all lowercase, "
                         f"written in {language}. The app being Chinese-themed is not a reason to switch "
                         f"language here — the hashtags must match the other fields.\n"
-                        "- \"placement_hint\": ONE short instruction, at most 8 words, telling the person "
-                        "where to stand. Anchor it to something actually visible in the photo, and make "
-                        "the DEPTH clear — how far INTO the scene to stand. The app already shows the "
-                        "left/right position on screen but cannot show depth, so depth is the whole point "
-                        "of this field. Use phrasing like \"in front of\", \"just behind\", \"beside\", "
-                        "\"level with\". Examples: \"Stand in front of the blue door\", "
-                        "\"Stand just behind the low wall\", \"Stand beside the window, nearer than the plant\". "
-                        "No trailing full stop.\n"
-                        f"The spot is on the {side} side of the frame — keep the instruction consistent "
-                        "with that side."
+                        "- \"placement_hint\": ONE short instruction, at most 10 words, telling the person "
+                        "exactly where to stand — this is the app's only positioning guidance, so it must "
+                        "stand on its own. Anchor it to something actually visible in the photo (a door, a "
+                        "window, a bench, a wall) and, where it matters, make the DEPTH clear too — how far "
+                        "INTO the scene to stand, e.g. \"in front of\", \"just behind\", \"beside\", \"level "
+                        "with\". Examples: \"Stand next to the drawer\", \"Stand in front of the blue door\", "
+                        "\"Stand just behind the low wall\", \"Stand beside the window\". If nothing distinct "
+                        "is visible, give a simple positional instruction instead, e.g. \"Stand a little to "
+                        "the left, facing the light\". No trailing full stop."
                     )},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ]
@@ -379,11 +262,7 @@ def extract_features(image_path: str) -> dict:
         thirds_scores.append(float(np.mean(roi)))
     rule_of_thirds = max(thirds_scores) if thirds_scores else 0.0
 
-    # Suggested subject placement (normalized, top-left origin): balance / background cleanliness /
-    # light direction fused, with a backlight veto. See _compute_placement.
-    placement = _compute_placement(gray, saliency_map)
-    # Dead-space check: reuses the same saliency map, so this costs one more pass over an array
-    # that is already in memory.
+    # Dead-space check: reuses the saliency map already computed above.
     camera_tilt = _detect_dead_space(saliency_map)
 
     left_weight = float(np.mean(saliency_map[:, :w // 2]))
@@ -413,7 +292,6 @@ def extract_features(image_path: str) -> dict:
         "rule_of_thirds": rule_of_thirds,
         "alignment": alignment,
         "balance": float(balance),
-        "placement": placement,
         "camera_tilt": camera_tilt,
         "width": int(w),
         "height": int(h),
@@ -485,7 +363,7 @@ def analyze_scene(image_path: str, lang: str = DEFAULT_LANGUAGE) -> dict:
     if not _moderate_image(b64):
         raise InappropriateImageError("Image flagged as inappropriate")
     features = extract_features(image_path)
-    gpt = _analyze_with_gpt(b64, features["placement"], lang)
+    gpt = _analyze_with_gpt(b64, lang)
 
     filter_name = gpt.get("filter", "Vivid")
     if filter_name not in VALID_FILTERS:
@@ -499,7 +377,6 @@ def analyze_scene(image_path: str, lang: str = DEFAULT_LANGUAGE) -> dict:
         "blur_var":     round(features["blur_var"], 1),          # diagnostic — for tuning the gate
         "edge_sharpness": round(features["edge_sharpness"], 2),  # diagnostic — for tuning the gate
         "composition":  assess_composition(features),
-        "placement":    features["placement"],
         "camera_tilt":  features["camera_tilt"],
         "placement_hint": _clean_hint(gpt.get("placement_hint")),
         "hashtags":     _clean_hashtags(gpt.get("hashtags")),
