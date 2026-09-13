@@ -116,7 +116,7 @@ Two things have to change, and neither is obvious:
 
 1. **The API URL is hardcoded** at [`web/index.html:325`](web/index.html#L325). Change it to
    `http://localhost:8000`.
-2. **CORS will reject your origin.** The backend only allows the production Netlify domain by
+2. **CORS will reject your origin.** The backend only allows the production domain by
    default, so set this in the shell running your *local* backend:
 
    ```bash
@@ -130,10 +130,10 @@ It's a confusing hour if you don't know to look for it.
 ### Testing on a phone
 
 Camera, `devicemotion` and `deviceorientation` all need HTTPS on a real device. The path of least
-resistance is to push a branch and use the Netlify deploy preview — but note that **preview URLs
-are a different origin and are CORS-blocked** by the production backend, so a preview can load the
-UI but not scan. To scan from a preview you'd need to add its URL to `ALLOWED_ORIGINS` in the Render
-dashboard.
+resistance is to push a branch and use the Cloudflare Pages branch preview — but note that
+**preview URLs are a different origin and are CORS-blocked** by the production backend, so a
+preview can load the UI but not scan. To scan from a preview you'd need to add its URL to
+`ALLOWED_ORIGINS` in the Render dashboard.
 
 ---
 
@@ -186,7 +186,7 @@ Both sides auto-deploy from `main`.
 | | Config | Notes |
 |---|---|---|
 | Backend | [`render.yaml`](render.yaml) | Build `pip install -r requirements.txt`, start `uvicorn api_server:app`. Health check `/health`. |
-| Frontend | Netlify dashboard | No config in-repo; publish directory is `web/`. |
+| Frontend | Cloudflare Pages dashboard | No config in-repo; no build command, output directory is `web/`. |
 
 ### Environment variables
 
@@ -195,7 +195,7 @@ Set in the Render dashboard (Environment tab):
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `OPENAI_API_KEY` | **yes** | — | Never committed (`sync: false` in `render.yaml`). |
-| `ALLOWED_ORIGINS` | no | `https://dakaba.pages.dev,https://dakaba.netlify.app` | Comma-separated. **Replaces** the default rather than adding to it, so keep the production origin in the list. |
+| `ALLOWED_ORIGINS` | no | `https://dakaba.pages.dev` | Comma-separated. **Replaces** the default rather than adding to it, so keep the production origin in the list. |
 
 Dependencies are pinned exactly (`==`) in `requirements.txt`, and Python is pinned in
 `.python-version` — which CI reads too, so CI and production can't drift apart. To upgrade
@@ -208,7 +208,7 @@ something, bump one line and run the tests; don't bulk-refresh.
 `/analyze` is **unauthenticated by design** — this is a school project and adding auth was
 considered and declined. What protects it is cost control, not access control:
 
-- **CORS** pinned to the Netlify origin. Browser-enforced only; does nothing against a direct `curl`.
+- **CORS** pinned to the live frontend origin. Browser-enforced only; does nothing against a direct `curl`.
 - **Rate limit** 20 requests / 60s per IP. In-memory, so it resets on every cold start, and it keys
   on a spoofable `X-Forwarded-For`.
 - **Size cap** 8 MB, enforced while reading in chunks so a hostile body can't be buffered first.
