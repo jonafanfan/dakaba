@@ -142,35 +142,53 @@ def test_every_tr_key_in_the_script_exists_in_the_table():
 
 # ── the engine's own sentences ───────────────────────────────────────────────
 
+TILT_SCAN = """
+  analysisResult = {
+    camera_tilt: { direction: '%s', reason: '%s' },
+    composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
+  };
+  beginCoaching(analysisResult);
+  liveActive = true; liveLoop();
+"""
+
+
 @pytest.mark.parametrize("direction", ["up", "down"])
 def test_the_tilt_cue_is_translated_from_its_direction(direction):
     """The engine sends both a machine key and an English sentence. Translating from the key is what
     makes the cue Chinese without a second paid call to relabel a scene already analysed."""
-    out = run(f"""
-      applyLang('zh');
-      analysisResult = {{
-        camera_tilt: {{ direction: '{direction}', reason: 'English fallback' }},
-        composition: {{}}, lighting: {{}}, hashtags: [], filter: 'Vivid',
-      }};
-      beginCoaching(analysisResult);
-      console.log(JSON.stringify({{ tiltHint }}));
+    out = run("applyLang('zh');" + TILT_SCAN % (direction, "English fallback") + """
+      console.log(JSON.stringify({ cue: cues[cues.length - 1] }));
     """)
-    assert CJK.search(out["tiltHint"]), f"tilt cue stayed English: {out['tiltHint']!r}"
+    assert CJK.search(out["cue"]), f"tilt cue stayed English: {out['cue']!r}"
 
 
 def test_an_unknown_tilt_direction_keeps_the_engines_own_wording():
     """Forward compatibility: a direction added to the engine before the client knows about it must
     still say something true, not fall back to a generic line."""
-    out = run("""
-      applyLang('zh');
-      analysisResult = {
-        camera_tilt: { direction: 'newly_invented', reason: 'Something new' },
-        composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
-      };
-      beginCoaching(analysisResult);
-      console.log(JSON.stringify({ tiltHint }));
+    out = run("applyLang('zh');" + TILT_SCAN % ("newly_invented", "Something new") + """
+      console.log(JSON.stringify({ cue: cues[cues.length - 1] }));
     """)
-    assert out["tiltHint"] == "Something new"
+    assert out["cue"] == "Something new"
+
+
+def test_switching_language_after_the_scan_reaches_the_tilt_cue():
+    """Regression. The tilt cue used to be resolved once, inside beginCoaching, and stored as a
+    finished sentence — so switching language afterwards left it in the language you scanned in,
+    while every other cue followed. Found in a browser, not by these tests: the cue that the old
+    switch test happened to exercise was one of the per-frame `tr()` ones, which never had the bug.
+
+    The direction is the engine's machine key, so the client can re-phrase it on any frame. That is
+    the whole reason the engine sends a key rather than only a sentence.
+    """
+    out = run("applyLang('en');" + TILT_SCAN % ("down", "English fallback") + """
+      const english = cues[cues.length - 1];
+      applyLang('zh'); liveLoop();
+      console.log(JSON.stringify({ english, chinese: cues[cues.length - 1] }));
+    """)
+    assert out["english"] == "Empty space above — aim a little lower"
+    assert CJK.search(out["chinese"]), (
+        f"tilt cue kept the language it was scanned in: {out['chinese']!r}"
+    )
 
 
 def test_the_standing_guide_is_shown_as_the_model_wrote_it():

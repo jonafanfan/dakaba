@@ -164,12 +164,19 @@ def test_straightening_up_clears_the_cue():
 
 
 def test_dead_space_is_cued_when_the_horizon_is_fine():
-    assert cue_for("tiltHint = 'Empty space above — aim a little lower';") == \
+    """Phrased at render time from the direction, not stored as a finished sentence — see
+    test_client_i18n for why that distinction is load-bearing."""
+    assert cue_for("tiltDirection = 'down'; tiltFallback = 'engine wording';") == \
         "Empty space above — aim a little lower"
 
 
+def test_an_unphraseable_direction_falls_back_to_the_engines_wording():
+    assert cue_for("tiltDirection = 'sideways'; tiltFallback = 'Engine wording';") == \
+        "Engine wording"
+
+
 def test_straightening_takes_priority_over_the_tilt_hint():
-    cue = cue_for("needsStraightening = true; liveLean = 20; tiltHint = 'Empty space above';")
+    cue = cue_for("needsStraightening = true; liveLean = 20; tiltDirection = 'down';")
     assert cue == "Straighten the camera", f"tilt hint jumped the queue: {cue!r}"
 
 
@@ -207,12 +214,15 @@ def test_retake_restores_the_coaching_state():
       motionGranted = true;
       resetCoaching();                 // as stopLive() does on the way to the results screen
       retake();
-      console.log(JSON.stringify({ coachingActive, tiltHint, needsStraightening, hints }));
+      console.log(JSON.stringify({ coachingActive, tiltDirection, tiltFallback,
+                                   needsStraightening, hints }));
     """)
     assert out["coachingActive"] is True
-    # Phrased from `direction` now, not copied from `reason` — same sentence in English, and the
-    # only thing that makes it translatable without another call to the model.
-    assert out["tiltHint"] == "Empty space above — aim a little lower"
+    # The direction is kept, not a finished sentence; the cue is phrased from it each frame, which
+    # is what lets a language switch after the scan reach it. Read before running a frame, because
+    # a frame with the phone held level would latch needsStraightening back off.
+    assert out["tiltDirection"] == "down"
+    assert out["tiltFallback"] == "Empty space above — aim a little lower"
     assert out["needsStraightening"] is True
     assert out["hints"][-1] == "Stand next to the drawer"
 
@@ -246,10 +256,10 @@ def test_a_scan_and_a_retake_produce_the_same_coaching_state():
     out = run(ANALYSIS + """
       motionGranted = true;
       beginCoaching(analysisResult);
-      const afterScan = { tiltHint, needsStraightening, hint: hints[hints.length - 1] };
+      const afterScan = { tiltDirection, tiltFallback, needsStraightening, hint: hints[hints.length - 1] };
       resetCoaching();
       retake();
-      const afterRetake = { tiltHint, needsStraightening, hint: hints[hints.length - 1] };
+      const afterRetake = { tiltDirection, tiltFallback, needsStraightening, hint: hints[hints.length - 1] };
       console.log(JSON.stringify({ afterScan, afterRetake }));
     """)
     assert out["afterScan"] == out["afterRetake"]

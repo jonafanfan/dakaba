@@ -676,7 +676,11 @@
        What remains genuinely live is the camera tilt/straighten guidance below — it reads the
        phone's own sensors, not the subject, so it is unaffected by the marker's removal. */
     let coachingActive = false;
-    let tiltHint = null;           // camera_tilt.reason when a third of the frame is dead space
+    // camera_tilt, kept as the engine sent it rather than as a finished sentence: the language can
+    // change after the scan, and a pre-resolved string would keep the language it was scanned in.
+    // Phrasing happens per frame in liveLoop, the same way every other cue is handled.
+    let tiltDirection = null;      // camera_tilt.direction, once it is something other than "ok"
+    let tiltFallback = '';         // camera_tilt.reason, for a direction this client cannot phrase
     let needsStraightening = false;// the scanned frame had a crooked horizon
     // Live roll in degrees, from gravity. Gravity is reliable for roll (unlike the compass, which
     // is degenerate in this pose), so this is what tells us the user has actually straightened up.
@@ -790,7 +794,7 @@
       // scene's instruction sitting above the shutter, describing a scene you have walked away
       // from.
       const hint = $('placeHint'); if (hint) hint.textContent = '';
-      tiltHint = null; needsStraightening = false;
+      tiltDirection = null; tiltFallback = ''; needsStraightening = false;
       $('camLevel').classList.remove('needs-fix');
       setCue(null);
     }
@@ -827,9 +831,9 @@
         if (needsStraightening && Math.abs(liveLean) <= 3) needsStraightening = false;
         $('camLevel').classList.toggle('needs-fix', needsStraightening);
         // Straighten first: a crooked frame is the one thing the phone can measure itself, and
-        // tiltHint is advice about the scene rather than a fault to fix.
+        // the tilt hint is advice about the scene rather than a fault to fix.
         if (needsStraightening) setCue(tr('cue.straighten'));
-        else if (tiltHint) setCue(tiltHint);
+        else if (tiltDirection) setCue(trOr('tilt.' + tiltDirection, tiltFallback));
         else setCue(null);
       }
     }
@@ -926,8 +930,9 @@
       // camera_tilt is advisory: only cue when the engine actually found dead space AND gave
       // wording for it. Older responses have neither.
       const tilt = r.camera_tilt;
-      tiltHint = (tilt && tilt.direction && tilt.direction !== 'ok' && tilt.reason)
-        ? trOr('tilt.' + tilt.direction, tilt.reason) : null;
+      const hasTilt = !!(tilt && tilt.direction && tilt.direction !== 'ok' && tilt.reason);
+      tiltDirection = hasTilt ? tilt.direction : null;
+      tiltFallback = hasTilt ? tilt.reason : '';
 
       // composition.horizon describes the SCANNED frame, not the phone right now — so it only
       // opens the prompt. The live gravity reading decides when it is satisfied. Without a roll
