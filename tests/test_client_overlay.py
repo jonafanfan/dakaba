@@ -137,7 +137,7 @@ def test_only_transient_huds_overlay_the_image():
         "video", "gridOverlay",                         # the image and what is drawn on it
         "coachCue", "coachText", "statusChip",          # transient text
         "sceneBadgeTop",                                # small label
-        "camLevel", "camLevelTrack", "camLevelDot", "camLevelVal",   # the level bar
+        "camLevel", "camLevelRef", "camLevelLine",      # the horizon level
     }
     found = set(re.findall(r'id="([\w-]+)"', viewfinder))
     assert "video" in found, "the region helper is not reading the frame"
@@ -203,22 +203,33 @@ def test_the_controls_bar_animates_its_height():
     assert "resizeControls()" in state, "nothing re-measures the bar when the state changes"
 
 
-def test_the_level_bar_is_out_of_the_scene_badge_s_way():
-    """Both were centred at the top of the frame, so the bar sat across the scene label.
+def test_the_level_is_out_of_the_scene_badge_s_way():
+    """Both were once centred at the top of the frame, so the level sat across the scene label.
 
-    Asserted from the CSS rather than by rendering: there is no browser here to measure with, and
-    the rule that actually caused it — `left: 50%` on both — is visible in the source.
+    The level is a horizon line at mid-frame now rather than a bar in a corner, so the separation
+    is vertical where it used to be horizontal. Same requirement either way, and still worth
+    pinning: the badge owns the top of the frame, so the level must not be there.
+
+    Asserted from the CSS rather than by rendering: there is no browser here to measure with.
     """
     html = PAGE.read_text(encoding="utf-8")
-    bar = re.search(r"#camLevel\s*\{([^}]*)\}", html)
-    assert bar, "no #camLevel rule"
-    assert "left: 50%" not in bar.group(1), "the level bar is centred over the scene badge again"
-    assert "right:" in bar.group(1), "the level bar should sit in a corner, out of the frame's middle"
+    lines = re.search(r"#camLevelRef, #camLevelLine\s*\{([^}]*)\}", html, re.S)
+    assert lines, "no rule for the level's lines"
+    assert "top: calc(50%" in lines.group(1), (
+        "the level has left mid-frame — check it cannot reach the scene badge again"
+    )
+    badge = re.search(r"\.scene-badge-top\s*\{([^}]*)\}", html, re.S)
+    assert badge, "no .scene-badge-top rule"
+    assert "top: calc(50%" not in badge.group(1) and "top: 50%" not in badge.group(1), (
+        "the badge has moved to mid-frame, where the level line now lies"
+    )
 
 
-def test_a_long_scene_name_cannot_reach_the_level_bar():
-    """The badge is centred and the bar is in the corner, so a wide enough label still collides.
-    Capping the badge is what makes the separation hold for a name like "Riverside Promenade"."""
+def test_a_long_scene_name_stays_within_its_own_badge():
+    """Kept from when the level sat in the top corner and a wide enough label could still reach it.
+    The level has moved to mid-frame since, so this no longer guards a collision — but an unbounded
+    badge that grows to the frame edge is its own bug, and "Riverside Promenade" is a real scene
+    name, so the cap stays pinned."""
     html = PAGE.read_text(encoding="utf-8")
     badge = re.search(r"\.scene-badge-top\s*\{([^}]*)\}", html)
     assert badge, "no .scene-badge-top rule"

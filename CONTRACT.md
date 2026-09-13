@@ -359,7 +359,7 @@ The client treats a missing `lighting` key as a bad response regardless of statu
 2. `filter` comes only from the closed set in §3.6; unknown values must fall back, not throw.
 3. `placement_hint` is free text from the model — render it verbatim, but treat `""` as "nothing to
    show", not an error.
-4. Live device roll (the level slider, and the straighten cue) is entirely client-owned, read from
+4. Live device roll (the horizon level, and the straighten cue) is entirely client-owned, read from
    `devicemotion`. The engine reports **scene** tilt via `composition.horizon`. Don't merge the two
    into one indicator.
 

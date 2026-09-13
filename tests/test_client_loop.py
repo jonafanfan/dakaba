@@ -32,18 +32,20 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node
 DOM_STUB = r"""
 const cues = [];      // every #coachText assignment, in order
 const hints = [];     // every #placeHint assignment, in order
-const levels = [];    // every #camLevelVal assignment, in order
-const dotLefts = [];  // every #camLevelDot style.left assignment, in order
+const styles = [];    // every style property assignment, tagged with the element id
 const toggles = [];   // every classList.toggle(cls, val) call, tagged with the element id
 function el(id) {
   return {
     id,
     style: new Proxy({}, {
-      set: (t, k, val) => { t[k] = val; if (id === 'camLevelDot' && k === 'left') dotLefts.push(val); return true; },
+      set: (t, k, val) => { t[k] = val; styles.push({ id, prop: k, val }); return true; },
       get: (t, k) => t[k] || '',
     }),
     classList: {
-      add(){}, remove(){},
+      // add/remove are recorded as toggles too, so a test can read the resulting state whichever
+      // call the page happened to use to get there.
+      add(...cs){ cs.forEach(cls => toggles.push({ id, cls, val: true })); },
+      remove(...cs){ cs.forEach(cls => toggles.push({ id, cls, val: false })); },
       toggle(cls, val){ toggles.push({ id, cls, val }); },
       contains(){ return false; },
     },
@@ -52,7 +54,6 @@ function el(id) {
     set textContent(v) {
       if (id === 'coachText') cues.push(v);
       if (id === 'placeHint') hints.push(v);
-      if (id === 'camLevelVal') levels.push(v);
     },
     get textContent() { return ''; },
     innerHTML: '', value: '', files: [],
@@ -199,76 +200,78 @@ def test_the_needs_fix_class_follows_the_straighten_cue():
     assert vals == [True, False], f"needs-fix should track the straighten cue, got {vals}"
 
 
-# ── the level bar, driven by real gravity vectors ────────────────────────────
+# ── the horizon level, driven by real gravity vectors ───────────────────────
 #
 # onMotion had no tests at all: every cue test sets `liveLean` by hand, which walks straight past
-# the function that computes it. That is how the bar shipped reading pitch as though it were roll.
+# the function that computes it. That is how it shipped reading pitch as though it were roll, and
+# how the sign stayed wrong on iOS.
 
 POSE = """
 function pose(rollDeg, pitchDeg) {
+  // Gravity as a non-iOS device reports it: a vector pointing along world-up, in device axes.
+  // Rotating the phone CLOCKWISE, as the person holding it sees it, swings that vector toward -x.
   const G = 9.81, rad = d => d * Math.PI / 180;
-  return { x: G * Math.sin(rad(rollDeg)) * Math.cos(rad(pitchDeg)),
-           y: G * Math.cos(rad(rollDeg)) * Math.cos(rad(pitchDeg)),
-           z: G * Math.sin(rad(pitchDeg)) };
+  return { x: -G * Math.sin(rad(rollDeg)) * Math.cos(rad(pitchDeg)),
+           y:  G * Math.cos(rad(rollDeg)) * Math.cos(rad(pitchDeg)),
+           z:  G * Math.sin(rad(pitchDeg)) };
 }
 function hold(rollDeg, pitchDeg) {
   onMotion({ accelerationIncludingGravity: pose(rollDeg, pitchDeg) });
-  const green = toggles.filter(t => t.id === 'camLevelDot' && t.cls === 'on');
-  return { readout: levels[levels.length - 1],
-           green: green.length ? green[green.length - 1].val : null,
-           dot: parseFloat(dotLefts[dotLefts.length - 1]),
+  const rot = styles.filter(s => s.id === 'camLevelLine' && s.prop === 'transform');
+  const op  = styles.filter(s => s.id === 'camLevelLine' && s.prop === 'opacity');
+  const lvl = toggles.filter(t => t.id === 'camLevel' && t.cls === 'level');
+  return { angle: rot.length ? parseFloat(rot[rot.length - 1].val.match(/-?[0-9.]+/)[0]) : null,
+           opacity: op.length ? op[op.length - 1].val : null,
+           level: lvl.length ? lvl[lvl.length - 1].val : null,
            liveLean: Math.round(liveLean) };
 }
 """
 
 
-def test_held_upright_the_bar_reads_zero_and_goes_green():
+def test_held_upright_the_line_is_flat_and_green():
     out = run(POSE + """
       console.log(JSON.stringify(hold(0, 0)));
     """)
-    assert out["readout"] == "0°"
-    assert out["green"] is True
-    assert out["dot"] == 50, "a level phone puts the dot in the middle of the track"
+    assert out["angle"] == 0
+    assert out["level"] is True
 
 
-def test_leaning_reads_the_angle_and_moves_the_dot_that_way():
+def test_the_line_lies_along_the_horizon_not_mirrored_against_it():
+    """Rotate the phone clockwise and the horizon in the frame swings anticlockwise, so the line
+    must too. Get this backwards and the indicator mirrors the real horizon — still zero when level,
+    so it looks plausible, but it leans the wrong way exactly when you need it."""
     out = run(POSE + """
-      console.log(JSON.stringify({ right: hold(20, 0), left: hold(-20, 0) }));
+      console.log(JSON.stringify({ cw: hold(20, 0), ccw: hold(-20, 0) }));
     """)
-    assert out["right"]["readout"] == "20°" and out["left"]["readout"] == "20°", (
-        "the readout is a magnitude; the dot carries the direction"
-    )
-    assert out["right"]["green"] is False and out["left"]["green"] is False
-    assert out["right"]["dot"] > 50 > out["left"]["dot"]
+    assert out["cw"]["angle"] == pytest.approx(-20, abs=0.2), "clockwise phone, anticlockwise line"
+    assert out["ccw"]["angle"] == pytest.approx(20, abs=0.2)
+    assert out["cw"]["level"] is False and out["ccw"]["level"] is False
 
 
 def test_aiming_up_or_down_leaves_the_level_alone():
-    """The regression. A level bar answers one question — is the horizon straight — and pitch is
-    not part of it. The old reading was the angle from world-vertical, so aiming down to frame a
-    shot climbed the number and killed the green while the dot sat centred, one widget disagreeing
-    with itself. Worse, camera_tilt actively asks the user to aim lower, so the app broke its own
-    indicator by being obeyed.
-    """
+    """The regression that started this. A level answers one question — is the horizon straight —
+    and pitch is not part of it. The reading used to be the angle from world-vertical, so aiming
+    down to frame a shot climbed the number and killed the green. camera_tilt actively asks the user
+    to aim lower, so the app broke its own indicator by being obeyed."""
     out = run(POSE + """
       console.log(JSON.stringify({ down25: hold(0, 25), down45: hold(0, 45), up30: hold(0, -30) }));
     """)
-    for pose_name, row in out.items():
-        assert row["readout"] == "0°", f"{pose_name} leaked pitch into the readout: {row['readout']}"
-        assert row["green"] is True, f"{pose_name} lost the green while perfectly level"
-        assert row["dot"] == 50
+    for name, row in out.items():
+        assert row["angle"] == pytest.approx(0, abs=0.2), f"{name} leaked pitch into the level"
+        assert row["level"] is True, f"{name} lost the green while perfectly level"
 
 
-def test_the_green_band_is_the_one_the_straighten_cue_clears_at():
-    """Both sit at 3 degrees on purpose: the bar should turn green exactly as the cue goes away,
+def test_the_level_band_is_the_one_the_straighten_cue_clears_at():
+    """Both sit at 3 degrees on purpose: the line should go green exactly as the cue goes away,
     not a couple of degrees either side of it."""
     out = run(POSE + """
       console.log(JSON.stringify({ inside: hold(2, 0), outside: hold(4, 0) }));
     """)
-    assert out["inside"]["green"] is True
-    assert out["outside"]["green"] is False
+    assert out["inside"]["level"] is True
+    assert out["outside"]["level"] is False
 
 
-def test_a_phone_lying_flat_says_nothing_rather_than_claiming_level():
+def test_a_phone_lying_flat_hides_the_line_rather_than_claiming_level():
     """Face up, almost no gravity is left in the screen plane, so roll is two noisy numbers handed
     to atan2 — it swings and can read a confident 0. It must also not touch liveLean, or a phone put
     down on a table would satisfy the straighten cue's latch."""
@@ -277,8 +280,38 @@ def test_a_phone_lying_flat_says_nothing_rather_than_claiming_level():
       const flat = hold(0, 90);
       console.log(JSON.stringify({ flat, liveLeanAfter: liveLean }));
     """)
-    assert out["flat"]["readout"] == "–", "a meaningless angle must not be printed as a number"
+    assert out["flat"]["opacity"] == "0", "a meaningless angle must not be drawn as a horizon"
+    assert out["flat"]["level"] is False
     assert out["liveLeanAfter"] == 999, "a flat phone quietly satisfied the straighten latch"
+
+
+@pytest.mark.parametrize("roll", [0, 12, -12, 35])
+def test_the_line_is_the_same_whichever_sign_convention_the_phone_uses(roll):
+    """iOS reports accelerationIncludingGravity negated compared with everyone else — face-up on a
+    table it reads z = -9.8 where Android reads +9.8 — which shifts the computed angle by exactly
+    180 degrees. A line drawn at t and at t+180 looks the same, so folding the angle into (-90, 90]
+    makes the difference vanish rather than trying to detect the platform.
+
+    Detection was tried first and does not work: DeviceMotionEvent.requestPermission is defined by
+    Chromium as well as by Safari, so the feature test that supposedly means "iOS" reports iOS on a
+    Windows desktop. This asserts the property instead — same pose, either convention, same line.
+    """
+    out = run(POSE + f"""
+      const p = pose({roll}, 0);
+      const angle = () => {{
+        const rot = styles.filter(s => s.id === 'camLevelLine' && s.prop === 'transform');
+        return parseFloat(rot[rot.length - 1].val.match(/-?[0-9.]+/)[0]);
+      }};
+      onMotion({{ accelerationIncludingGravity: p }});
+      const android = angle();
+      onMotion({{ accelerationIncludingGravity: {{ x: -p.x, y: -p.y, z: -p.z }} }});
+      const ios = angle();
+      console.log(JSON.stringify({{ android, ios }}));
+    """)
+    assert out["android"] == pytest.approx(out["ios"], abs=0.2), (
+        f"the line leans differently on the two conventions: {out}"
+    )
+    assert out["android"] == pytest.approx(-roll, abs=0.2), "clockwise phone, anticlockwise line"
 
 
 # ── retake: another shot of the same setup ───────────────────────────────────

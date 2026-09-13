@@ -216,15 +216,24 @@
        scene badge and covered it. A tilt readout is glanced at, not read, so the corner costs it
        nothing — and shrinking the track keeps the dot's travel obvious while freeing the middle
        of the frame, which is the part of the shot the photographer is actually composing. */
-    #camLevel { position: absolute; top: calc(22px + env(safe-area-inset-top)); right: 12px; display: flex; align-items: center; gap: 7px; z-index: 25; pointer-events: none; }
-    #camLevelTrack { width: 112px; height: 2px; background: rgba(255,255,255,0.25); border-radius: 1px; position: relative; }
-    #camLevelDot { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 0 6px rgba(0,0,0,.4); }
-    #camLevelDot.on { background: #66bb6a; box-shadow: 0 0 10px rgba(102,187,106,.7); }
-    #camLevelVal { font: 11px/1 monospace; color: rgba(255,255,255,.7); min-width: 28px; text-align: right; }
-    #camLevelVal.on { color: #66bb6a; }
-    /* while a straighten cue is showing, the bar is the thing to look at */
-    #camLevel.needs-fix #camLevelTrack { background: rgba(230,126,34,0.55); }
-    #camLevel.needs-fix #camLevelDot { background: #E67E22; box-shadow: 0 0 10px rgba(230,126,34,.8); }
+    /* Horizon level, the way a camera app does it: a line lying at the angle the phone is actually
+       rotated to, over a fixed horizontal reference, the two merging when you are level.
+       This replaced a dot sliding along a track, which could not work however the maths was fixed —
+       a dot shows a magnitude and leaves the direction to guesswork, because nothing on screen says
+       whether it marks the way the phone is leaning or the way you must turn it. A line has no such
+       ambiguity: it either looks parallel to the real horizon behind it or it does not. */
+    #camLevel { position: absolute; inset: 0; display: none; z-index: 25; pointer-events: none; }
+    #camLevelRef, #camLevelLine {
+      position: absolute; left: 31%; width: 38%; top: calc(50% - 1px); height: 2px;
+      border-radius: 2px; transform-origin: 50% 50%;
+    }
+    #camLevelRef  { background: rgba(255,255,255,0.3); }
+    #camLevelLine { background: rgba(255,255,255,0.92); box-shadow: 0 1px 4px rgba(0,0,0,0.55); }
+    /* Level: the two lines coincide, so the reference drops away and the line carries the colour. */
+    #camLevel.level #camLevelRef  { opacity: 0; }
+    #camLevel.level #camLevelLine { background: #66bb6a; box-shadow: 0 0 10px rgba(102,187,106,.75); }
+    /* while a straighten cue is showing, the line is the thing to look at */
+    #camLevel.needs-fix #camLevelLine { background: #E67E22; box-shadow: 0 0 10px rgba(230,126,34,.8); }
 
     /* Crop marks on the frame corners: the clearest way to say the sharp rectangle is the shot
        and the blur around it is not. Same device as the home screen and the app icon. */
@@ -399,10 +408,10 @@
 
       <div class="scene-badge-top" id="sceneBadgeTop"></div>
 
-      <!-- level slider (device tilt) -->
+      <!-- horizon level: fixed reference, plus a line at the phone's own rotation -->
       <div id="camLevel">
-        <div id="camLevelTrack"><div id="camLevelDot"></div></div>
-        <span id="camLevelVal">0°</span>
+        <div id="camLevelRef"></div>
+        <div id="camLevelLine"></div>
       </div>
     </div>
 
@@ -711,7 +720,7 @@
       $('gridOverlay').style.display = tips ? 'block' : 'none';
       $('sceneBadgeTop').style.display = tips ? 'block' : 'none';
       $('tipPanel').style.display    = tips ? 'block' : 'none';
-      $('camLevel').style.display    = tips ? 'flex' : 'none';   // no level/tilt on the initial scan
+      $('camLevel').style.display    = tips ? 'block' : 'none';  // no level/tilt on the initial scan
       updateLensVisibility();
       if (s !== 'tips') resetCoaching();
       // Last: resetCoaching clears the placement hint, which is part of what is being measured.
@@ -1138,36 +1147,39 @@
       const a = e.accelerationIncludingGravity; if (!a) return;
       const x = a.x || 0, y = a.y || 0, z = a.z || 0;
       const g = Math.hypot(x, y, z) || 1;
-      const d = $('camLevelDot'), v = $('camLevelVal'); if (!d || !v) return;
+      const wrap = $('camLevel'), line = $('camLevelLine'); if (!wrap || !line) return;
 
-      // ROLL, and only roll: how far the horizon leans. Everything here reads from the one angle,
-      // because the bar had the dot on roll and the number on the angle from world-vertical, which
-      // folds in PITCH as well. Aim down 25 degrees to frame a shot — which this app asks you to do
-      // whenever camera_tilt fires — and the dot sat dead centre while the number read 25 and
-      // refused to go green: one widget disagreeing with itself, and the app contradicting its own
-      // advice. |y| keeps the sign convention agnostic across iOS and Android.
+      // ROLL, and only roll: rotation about the axis the lens points down, which is the one thing
+      // that tilts the horizon in the picture. Pitch — aiming up or down — must not touch it, or
+      // the app contradicts its own camera_tilt cue, which asks the user to aim lower.
       const planar = Math.hypot(x, y);
       // Near flat, face up or down, almost no gravity is left in the screen plane and roll is two
-      // noisy numbers handed to atan2 — it swings wildly and can read a confident 0. Say nothing
+      // noisy numbers handed to atan2 — it swings wildly and can read a confident 0. Show nothing
       // rather than claim level, and leave liveLean alone so a phone on a table cannot satisfy the
       // straighten cue's latch.
       if (planar / g < 0.2) {
-        d.style.left = '50%';
-        d.classList.remove('on');
-        v.classList.remove('on');
-        v.textContent = '–';
+        wrap.classList.remove('level');
+        line.style.opacity = '0';
         return;
       }
-      const roll = Math.atan2(x, Math.abs(y)) * 180 / Math.PI;
-      liveLean = roll;
-      const p = Math.max(0, Math.min(100, ((roll / 30) + 1) * 50));
-      // The same 3-degree band the straighten cue clears at, so the bar turns green exactly when
+      line.style.opacity = '1';
+      const roll = Math.atan2(-x, y) * 180 / Math.PI;   // + = phone rotated clockwise for the user
+      // iOS reports accelerationIncludingGravity with the opposite sign to everyone else — a phone
+      // face-up on a table reads z = -9.8 there and +9.8 on Android — which shifts this angle by
+      // exactly 180 degrees. A LINE HAS NO ENDS: drawn at t or t+180 it looks identical, so folding
+      // the angle into (-90, 90] makes the whole platform question disappear. No user-agent
+      // sniffing, and nothing to get wrong on a device nobody here can test on.
+      //
+      // (Detecting iOS by DeviceMotionEvent.requestPermission does not work, incidentally —
+      // Chromium defines it too, so that test reports iOS on a Windows desktop.)
+      const lean = ((roll + 90) % 180 + 180) % 180 - 90;
+      liveLean = lean;
+      // The horizon turns the opposite way to the phone, so the line lies at -lean. Get this
+      // backwards and the line mirrors the real horizon instead of lying along it.
+      line.style.transform = 'rotate(' + (-lean).toFixed(1) + 'deg)';
+      // The same 3-degree band the straighten cue clears at, so the line goes green exactly when
       // the cue goes away instead of a moment either side of it.
-      const level = Math.abs(roll) < 3;
-      d.style.left = p + '%';
-      d.classList.toggle('on', level);
-      v.classList.toggle('on', level);
-      v.textContent = Math.round(Math.abs(roll)) + '°';
+      wrap.classList.toggle('level', Math.abs(lean) < 3);
     };
 
     // Asked from the start tap, and BEFORE getUserMedia — that ordering is the whole fix. iOS
