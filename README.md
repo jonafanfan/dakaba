@@ -154,7 +154,7 @@ preview can load the UI but not scan. To scan from a preview you'd need to add i
 .venv/Scripts/python -m pytest        # or bare `pytest`
 ```
 
-**254 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
+**255 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
 the fixture makes constructing a real one a test failure.
 
 The three `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
@@ -167,7 +167,7 @@ both were out-of-scope identifiers that only failed when the code actually ran.
 | [`test_assessments.py`](tests/test_assessments.py) | 40 | lighting, composition, blueprint — thresholds at their boundaries |
 | [`test_api.py`](tests/test_api.py) | 31 | endpoint guards: size cap, rate limit, error mapping, CORS, `lang` |
 | [`test_guidance.py`](tests/test_guidance.py) | 30 | dead-space tilt, the model's standing sentence, the client/engine filter agreement |
-| [`test_client_i18n.py`](tests/test_client_i18n.py) | 17 | **the language switch, run for real in node** — both string tables, the tilt cue's key |
+| [`test_client_i18n.py`](tests/test_client_i18n.py) | 18 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the tilt cue's key |
 | [`test_client_overlay.py`](tests/test_client_overlay.py) | 15 | `visibleCrop` maths and the camera-region layout invariants |
 | [`test_filters.py`](tests/test_filters.py) | 14 | pixel-baked filters match the CSS preview exactly |
 | [`test_client_loop.py`](tests/test_client_loop.py) | 13 | **the render loop and the tilt/straighten coaching flow, run for real in node** |

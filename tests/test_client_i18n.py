@@ -122,6 +122,24 @@ def test_every_data_i18n_key_exists_in_the_table():
     assert not missing, f"markup asks for strings that do not exist: {sorted(missing)}"
 
 
+def test_every_tr_key_in_the_script_exists_in_the_table():
+    """The test above covers the markup half; this is the script half, which is the larger one.
+
+    A typo'd key renders as the key itself — `cue.striaghten` sitting over the viewfinder, in both
+    languages, because tr() returns the key rather than blank when it misses. `test_client_loop`'s
+    cue scan used to catch this as a side effect of checking the movement cues' wording; those cues
+    went with the standing marker, so the keys are checked here directly instead.
+
+    Only the English table is compared, because test_both_languages_define_exactly_the_same_keys
+    already pins the two to the same key set.
+    """
+    page = PAGE.read_text(encoding="utf-8")
+    keys = set(re.findall(r"tr\('([^']+)'\)", page))
+    assert len(keys) > 10, f"only found {sorted(keys)} — has tr() been renamed or inlined?"
+    missing = keys - set(strings("en"))
+    assert not missing, f"the script asks for strings that do not exist: {sorted(missing)}"
+
+
 # ── the engine's own sentences ───────────────────────────────────────────────
 
 @pytest.mark.parametrize("direction", ["up", "down"])
