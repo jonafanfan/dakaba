@@ -266,13 +266,11 @@ def test_disallowed_origin_gets_no_cors_headers(client, ok_analysis):
     assert "access-control-allow-origin" not in response.headers
 
 
-@pytest.mark.parametrize(
-    "origin", ["https://dakaba.pages.dev", "https://dakaba.netlify.app"]
-)
-def test_the_production_origins_are_allowed_by_default(origin):
-    """The deployed frontend must work with no env var set in Render — on either host, so the
-    move between them cannot take the app down in the gap."""
-    assert origin in api_server.ALLOWED_ORIGINS
+def test_the_production_origin_is_allowed_by_default():
+    """The deployed frontend must work with no env var set in Render."""
+    assert api_server.ALLOWED_ORIGINS == ["https://dakaba.pages.dev"], (
+        f"expected only the live frontend, got {api_server.ALLOWED_ORIGINS}"
+    )
 
 
 def test_a_default_origin_actually_reaches_cors(client, ok_analysis):

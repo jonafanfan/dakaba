@@ -321,7 +321,7 @@ Notes:
   free-plan cold start, and the `X-Forwarded-For` it keys on is client-spoofable. It exists because
   each `/analyze` costs two OpenAI calls (moderation + vision). Needs a shared store if the service
   is ever scaled past one instance.
-- **CORS is not access control.** `allow_origins` is pinned to the Netlify site (override with the
+- **CORS is not access control.** `allow_origins` is pinned to the live frontend (override with the
   `ALLOWED_ORIGINS` env var, comma-separated, to add a preview deploy or `http://localhost:…` for
   local dev). It stops other *sites* from spending the key through a visitor's browser; it does
   nothing against a direct `curl`. There is still no authentication.
