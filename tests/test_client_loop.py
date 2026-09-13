@@ -278,17 +278,23 @@ def test_confirmation_is_required_before_the_marker_can_go_green():
 
 
 def all_cue_strings():
-    """Every literal passed to setCue, including the ones inside ternaries.
+    """Every cue the page can show, in English, including the ones inside ternaries.
 
     Matching only `setCue('...')` misses `setCue(a ? 'x' : 'y')` — which is where the movement
     cues live, i.e. exactly the ones this file cares about. That version of the check passed while
     testing nothing.
+
+    Cues are now table keys rather than literals, so the keys are collected from the call sites and
+    resolved through the page's own English table. Reading the table instead of restating it means
+    a cue that is reworded here is still checked; a cue that is *deleted* disappears from both, so
+    the guard test below keeps this from silently returning nothing.
     """
     page = PAGE.read_text(encoding="utf-8")
-    cues = set()
+    keys = set()
     for call in re.findall(r"setCue\(([^;]*?)\);", page):
-        cues |= set(re.findall(r"'([^']+)'", call))
-    return cues
+        keys |= set(re.findall(r"tr\('([^']+)'\)", call))
+    english = run("console.log(JSON.stringify(STRINGS.en));")
+    return {english[k] for k in keys if k in english}
 
 
 def test_the_cue_scan_finds_the_movement_cues():
@@ -408,7 +414,7 @@ ANALYSIS = """
   analysisResult = {
     scene_type: 'Cafe',
     placement: { x: 0.333, y: 0.70, reason: 'light', reason_text: 'Light falls on your face' },
-    camera_tilt: { direction: 'down', reason: 'Empty space above' },
+    camera_tilt: { direction: 'down', reason: 'Empty space above — aim a little lower' },
     composition: { horizon: 'Tilted' },
     placement_hint: 'Stand in front of the blue door',
     lighting: { quality: 'Good' },
@@ -431,7 +437,9 @@ def test_retake_restores_the_coaching_state():
     assert out["coachingActive"] is True
     assert out["standPos"] == {"x": 0.333, "y": 0.70}
     assert out["standReason"] == "Light falls on your face"
-    assert out["tiltHint"] == "Empty space above"
+    # Phrased from `direction` now, not copied from `reason` — same sentence in English, and the
+    # only thing that makes it translatable without another call to the model.
+    assert out["tiltHint"] == "Empty space above — aim a little lower"
     assert out["needsStraightening"] is True
 
 

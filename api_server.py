@@ -5,12 +5,12 @@ import time
 import uuid
 from collections import defaultdict, deque
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import UnidentifiedImageError
 
-from scene_analysis import analyze_scene, InappropriateImageError
+from scene_analysis import analyze_scene, DEFAULT_LANGUAGE, InappropriateImageError
 
 logger = logging.getLogger("daka")
 
@@ -108,7 +108,10 @@ async def health():
 
 
 @app.post("/analyze")
-async def analyze(request: Request, file: UploadFile = File(...)):
+async def analyze(request: Request, file: UploadFile = File(...),
+                  lang: str = Form(DEFAULT_LANGUAGE)):
+    # Optional on purpose. Older clients send no lang at all, and a junk value is not worth
+    # rejecting a paid-for scan over — analyze_scene falls back on anything it does not know.
     if _rate_limited(_client_ip(request)):
         return JSONResponse(
             status_code=429,
@@ -134,7 +137,7 @@ async def analyze(request: Request, file: UploadFile = File(...)):
     with open(tmp_path, "wb") as f:
         f.write(contents)
     try:
-        return analyze_scene(tmp_path)
+        return analyze_scene(tmp_path, lang)
     except InappropriateImageError:
         # Must precede ValueError — InappropriateImageError subclasses it.
         return JSONResponse(status_code=400, content={"error": "Image not suitable for analysis"})
