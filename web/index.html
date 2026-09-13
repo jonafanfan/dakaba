@@ -22,6 +22,20 @@
       --tan: #C9A24B;
       --tan-tint: #FBF1E4;
       --card-shadow: 0 2px 12px rgba(0,0,0,0.05);
+
+      /* ── Home screen proportions — the five numbers worth tuning ──
+         --mark-size    how big 打卡吧！is (clamped, so it shrinks on a narrow phone)
+         --mark-inset   gap between the characters and the viewfinder's edge
+         --mark-gap     how far outside that edge the corner marks sit
+         --hud-gap      how far outside it the REC / timecode / battery / format labels sit
+         --home-bottom  space under the hint line at the bottom of the screen
+         Raise a gap to spread the framing out, lower it to close in on the mark. --mark-inset
+         moves the edge everything else is measured from, so it moves the marks AND the labels. */
+      --mark-size: clamp(76px, 24vw, 96px);
+      --mark-inset: 34px;
+      --mark-gap: 46px;
+      --hud-gap: 38px;
+      --home-bottom: 24px;
     }
 
     /* Dark counterpart — warm near-blacks, not neutral greys, so the "Warm Film" identity
@@ -61,32 +75,28 @@
       flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      padding: 46px 32px calc(52px + env(safe-area-inset-bottom));
+      padding: 46px 32px calc(var(--home-bottom) + env(safe-area-inset-bottom));
     }
     #home.active { display: flex; }
 
-    .app-subtitle {
-      font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: var(--text2);
-    }
-
     .hero { flex: 1; display: flex; align-items: center; justify-content: center; }
-    .viewfinder { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 34px; }
+    .viewfinder { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: var(--mark-inset); }
     .corner { position: absolute; width: 38px; height: 38px; }
-    .corner-tl { top: -46px; left: -8px; border-top: 3px solid var(--text2); border-left: 3px solid var(--text2); }
-    .corner-tr { top: -46px; right: -8px; border-top: 3px solid var(--text2); border-right: 3px solid var(--text2); }
-    .corner-bl { bottom: -46px; left: -8px; border-bottom: 3px solid var(--text2); border-left: 3px solid var(--text2); }
-    .corner-br { bottom: -46px; right: -8px; border-bottom: 3px solid var(--text2); border-right: 3px solid var(--text2); }
+    .corner-tl { top: calc(var(--mark-gap) * -1); left: -8px; border-top: 3px solid var(--text2); border-left: 3px solid var(--text2); }
+    .corner-tr { top: calc(var(--mark-gap) * -1); right: -8px; border-top: 3px solid var(--text2); border-right: 3px solid var(--text2); }
+    .corner-bl { bottom: calc(var(--mark-gap) * -1); left: -8px; border-bottom: 3px solid var(--text2); border-left: 3px solid var(--text2); }
+    .corner-br { bottom: calc(var(--mark-gap) * -1); right: -8px; border-bottom: 3px solid var(--text2); border-right: 3px solid var(--text2); }
 
     .hud { position: absolute; font-size: 11px; letter-spacing: 1px; color: var(--text2); }
-    .hud-rec { top: -38px; left: 2px; }
-    .hud-time { top: -34px; left: 50%; transform: translateX(-50%); }
-    .hud-bat { top: -41px; right: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .hud-rec { top: calc(var(--hud-gap) * -1); left: 2px; }
+    .hud-time { top: calc((var(--hud-gap) - 4px) * -1); left: 50%; transform: translateX(-50%); }
+    .hud-bat { top: calc((var(--hud-gap) + 3px) * -1); right: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
     .hud-bat-bar { width: 26px; height: 9px; border: 1px solid var(--text2); border-radius: 1px; padding: 1px; }
     .hud-bat-fill { width: 70%; height: 100%; background: var(--text2); }
-    .hud-format { bottom: -38px; right: 2px; }
+    .hud-format { bottom: calc(var(--hud-gap) * -1); right: 2px; }
 
     .title-block { display: flex; flex-direction: column; align-items: center; }
-    .char { font-family: "Noto Serif SC", serif; font-size: clamp(76px, 24vw, 96px); font-weight: 700; color: var(--text); line-height: 1.12; }
+    .char { font-family: "Noto Serif SC", serif; font-size: var(--mark-size); font-weight: 700; color: var(--text); line-height: 1.12; }
     .char-row { display: flex; padding-left: 48px; }
 
     /* Language is chosen on the way in, so the switch lives on the home screen only. A copy on
@@ -339,7 +349,6 @@
       <button class="lang-opt" data-lang="en">EN</button>
       <button class="lang-opt" data-lang="zh">中文</button>
     </div>
-    <div class="app-subtitle" data-i18n="home.subtitle">Find your perfect shot</div>
     <div class="hero">
       <div class="viewfinder">
         <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
@@ -484,7 +493,6 @@
     const LANGS = ['en', 'zh'];
     const STRINGS = {
       en: {
-        'home.subtitle': 'Find your perfect shot',
         'home.hint': 'Point at an empty scene to begin',
 
         'cam.shutterHint': 'Point at an empty scene and tap',
@@ -541,7 +549,6 @@
         'err.server': 'Server error',
       },
       zh: {
-        'home.subtitle': '找到最好的取景位',
         'home.hint': '对准一个没有人的场景即可开始',
 
         'cam.shutterHint': '对准空场景，轻点快门',
