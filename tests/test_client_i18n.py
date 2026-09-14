@@ -100,13 +100,28 @@ def test_a_browser_that_refuses_storage_still_switches():
     assert CJK.search(out["cue"])
 
 
-def test_the_wordmark_and_the_start_button_are_never_translated():
-    """打卡吧！ and 开始打卡 are the brand, not copy — they read the same in both languages, and a
-    data-i18n on either would quietly replace the logo."""
+def test_the_wordmark_is_never_translated():
+    """打卡吧！ is the logo, not copy. A data-i18n on it would quietly replace the mark itself."""
     page = PAGE.read_text(encoding="utf-8")
-    start = re.search(r'<button class="start-btn" id="startBtn"[^>]*>', page).group(0)
-    assert "data-i18n" not in start, "the start button is branding — it must not be translated"
     assert '<span class="char">打</span>' in page
+    title = re.search(r'<div class="title-block">(.*?)</div>\s*</div>', page, re.S)
+    assert title, "the wordmark block moved"
+    assert "data-i18n" not in title.group(1), "the wordmark is the logo — it must not be translated"
+
+
+def test_the_start_button_is_translated():
+    """It was grouped with the wordmark as branding, which was the wrong call: it is the only
+    control on the screen, and a reader who cannot read it has nothing to press. A logo can be
+    foreign; a button cannot.
+    """
+    page = PAGE.read_text(encoding="utf-8")
+    start = re.search(r'<button class="start-btn" id="startBtn"[^>]*>([^<]*)<', page)
+    assert start, "the start button moved"
+    assert 'data-i18n="home.start"' in start.group(0), "the start button is untranslated again"
+    assert not CJK.search(start.group(1)), (
+        f"the shipped default is {start.group(1)!r} — the HTML fallback should be the English one"
+    )
+    assert CJK.search(strings("zh")["home.start"]), "the Chinese label is not Chinese"
 
 
 def test_every_data_i18n_key_exists_in_the_table():
