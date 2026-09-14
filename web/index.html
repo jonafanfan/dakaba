@@ -1370,20 +1370,41 @@
       return `dakaba-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
     }
 
+    const canShareFile = (file) => !!(navigator.canShare && navigator.canShare({ files: [file] }));
+
     async function sharePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
       const tags = (analysisResult && analysisResult.hashtags || []).join(' ');
       const file = new File([blob], filename(), { type: 'image/jpeg' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (canShareFile(file)) {
         try { await navigator.share({ files: [file], text: tags }); return; } catch (e) { if (e.name === 'AbortError') return; }
       }
-      savePhoto();          // no share support (most desktops) — saving is the useful thing left
+      downloadPhoto(blob);   // no share support (most desktops) — saving is the useful thing left
     }
 
+    // No web page can write to the camera roll on either mobile OS. There is no API for it: the
+    // system sheet's "Save Image" / "Save to Photos" is the only route, and a download attribute
+    // on a phone either lands in Files, lands in Downloads where the gallery never indexes it, or
+    // on iOS opens the blob in the tab and saves nothing at all. It also reports no failure, which
+    // is how this managed to toast "Saved" while saving nothing.
+    //
+    // So on a phone, Save opens the sheet. What separates it from Share is what goes in: Save
+    // attaches the file alone, which puts "Save Image" first; Share attaches the hashtags too,
+    // which is what you want when the destination is an app. One is for keeping, one for posting.
     async function savePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
+      const file = new File([blob], filename(), { type: 'image/jpeg' });
+      if (canShareFile(file)) {
+        try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+      }
+      downloadPhoto(blob);
+    }
+
+    // Desktop only, and the one path where "Saved" is a true statement — a browser that reaches
+    // here has a real filesystem and honours the download attribute.
+    function downloadPhoto(blob) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = filename();
       document.body.appendChild(a); a.click(); a.remove();
