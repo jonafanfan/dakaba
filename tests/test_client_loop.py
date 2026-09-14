@@ -708,28 +708,71 @@ def test_retake_costs_no_api_call():
 
 # ── share vs save ────────────────────────────────────────────────────────────
 
-def test_save_does_not_open_the_share_sheet():
-    """They used to be the same call with different arguments, so both buttons opened the OS sheet
-    and Save looked broken. Save writes the file; only Share asks the OS anything."""
-    out = run("""
-      capturedImg = { naturalWidth: 100, naturalHeight: 100 };
-      let shared = 0, downloaded = 0;
-      // The harness binds `navigator` as a const, so it is extended rather than replaced.
-      navigator.canShare = () => true;
-      navigator.share = () => { shared++; return Promise.resolve(); };
-      globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL(){} };
-      document.createElement = (t) => {
-        const el = { style: {}, classList: { add(){}, remove(){}, toggle(){} },
-                     getContext: () => ({ drawImage(){}, getImageData: () => ({ data: [] }), putImageData(){} }),
-                     toBlob: (cb) => cb({}), click: () => { if (t === 'a') downloaded++; },
-                     remove(){}, appendChild(){}, addEventListener(){} };
-        return el;
-      };
-      document.body = { appendChild(){} };
-      savePhoto().then(() => console.log(JSON.stringify({ shared, downloaded })));
+SAVE_STUB = """
+  capturedImg = { naturalWidth: 100, naturalHeight: 100 };
+  analysisResult = { hashtags: ['#a', '#b'] };
+  const calls = [];
+  let downloaded = 0, toasts = [];
+  globalThis.File = function (parts, name, opts) { return { name, type: opts && opts.type }; };
+  globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL(){} };
+  document.createElement = (t) => ({
+    style: {}, classList: { add(){}, remove(){}, toggle(){} },
+    getContext: () => ({ drawImage(){}, getImageData: () => ({ data: [] }), putImageData(){} }),
+    toBlob: (cb) => cb({}), click: () => { if (t === 'a') downloaded++; },
+    remove(){}, appendChild(){}, addEventListener(){},
+  });
+  document.body = { appendChild(){} };
+  toast = (m) => toasts.push(m);
+"""
+
+WITH_SHEET = """
+  // The harness binds `navigator` as a const, so it is extended rather than replaced.
+  navigator.canShare = () => true;
+  navigator.share = (o) => { calls.push(o); return Promise.resolve(); };
+"""
+
+NO_SHEET = """
+  navigator.canShare = undefined;
+  navigator.share = undefined;
+"""
+
+
+def test_save_attaches_the_file_alone_and_share_attaches_the_hashtags():
+    """The two buttons both open the system sheet on a phone, because no web page can write to the
+    camera roll on either mobile OS — the sheet's "Save Image" is the only route there.
+
+    What separates them is the payload. A file on its own puts saving first; adding text turns it
+    into a post. Getting this backwards is what made Save look like a broken copy of Share.
+    """
+    out = run(SAVE_STUB + WITH_SHEET + """
+      savePhoto()
+        .then(() => sharePhoto())
+        .then(() => console.log(JSON.stringify({
+          save: { files: calls[0].files.length, text: calls[0].text || null },
+          share: { files: calls[1].files.length, text: calls[1].text || null },
+        })));
     """)
-    assert out["shared"] == 0, "Save opened the share sheet"
-    assert out["downloaded"] == 1, "Save did not write the file"
+    assert out["save"]["files"] == 1 and out["save"]["text"] is None, "Save should attach no text"
+    assert out["share"]["text"] == "#a #b", "Share should carry the hashtags"
+
+
+def test_save_falls_back_to_a_real_download_without_a_share_sheet():
+    """Desktop. This is the only path where a file genuinely lands on disk."""
+    out = run(SAVE_STUB + NO_SHEET + """
+      savePhoto().then(() => console.log(JSON.stringify({ downloaded, toasts })));
+    """)
+    assert out["downloaded"] == 1, "nothing was written"
+    assert out["toasts"] == ["Saved"]
+
+
+def test_it_does_not_claim_to_have_saved_when_it_handed_off_to_the_sheet():
+    """The bug this fixes said "Saved" unconditionally, including on a phone where the download
+    attribute silently does nothing. Claiming success we cannot verify is worse than staying quiet:
+    the OS gives its own confirmation when the sheet completes."""
+    out = run(SAVE_STUB + WITH_SHEET + """
+      savePhoto().then(() => console.log(JSON.stringify({ toasts })));
+    """)
+    assert out["toasts"] == [], f"claimed {out['toasts']} without writing anything"
 
 
 def test_the_saved_file_is_named_per_shot():
