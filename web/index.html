@@ -942,7 +942,7 @@
     // transform here on purpose: applying one would re-introduce the off-screen marker.
     function drawStandMarker(W, H, ctx, x, y, green, label) {
       const fx = x * W, fy = y * H;
-      const rw = 0.09 * H, rh = 0.028 * H, hw = rw * 0.9, boxH = 0.6 * H;
+      const rw = 0.09 * H, rh = 0.028 * H, hw = rw * 0.9, boxH = 0.72 * H;
       ctx.save();
       ctx.strokeStyle = green ? 'rgba(102,187,106,0.9)' : 'rgba(197,122,82,0.9)';
       ctx.fillStyle = green ? 'rgba(102,187,106,0.22)' : 'rgba(197,122,82,0.18)';
@@ -1057,7 +1057,16 @@
         const dx = subject.x - standPos.x;
         const dy = subject.y - standPos.y;
         const limit = onMarker ? 0.13 : 0.09;
-        onMarker = subject.seen && Math.abs(dx) < limit && Math.abs(dy) < limit + 0.03;
+        // Asymmetric, because the frame is. With the marker's feet near 0.88 there is only ~0.12
+        // of picture below it and 0.88 above, so one tolerance both ways makes "send them back"
+        // unreachable — it would need feet past the bottom edge. Someone who IS too close runs
+        // out of frame quickly, so a smaller number catches them before the tracker loses their
+        // legs altogether. The slack is the same hysteresis the horizontal check uses: it takes
+        // less to stay on the marker than to get there.
+        const slack = onMarker ? 0.04 : 0;
+        const tooFar = dy <= -(0.12 + slack);     // feet HIGHER in frame = further away
+        const tooNear = dy >= (0.06 + slack);     // feet LOWER in frame = closer to the camera
+        onMarker = subject.seen && Math.abs(dx) < limit && !tooFar && !tooNear;
 
         // Latch off once they have actually levelled up, so a later wobble does not start nagging
         // again.
@@ -1081,9 +1090,9 @@
           // themselves (straighten, aim) is phrased that way too. Left/right are the READER's, i.e.
           // what is on screen — a subject told to "move left" would go the opposite way.
           setCue(dx > 0 ? tr('cue.left') : tr('cue.right'));
-        } else if (Math.abs(dy) >= limit + 0.03) {
+        } else if (tooFar || tooNear) {
           // Feet higher in frame than the marker means further away, and vice versa.
-          setCue(dy < 0 ? tr('cue.closer') : tr('cue.back'));
+          setCue(tooFar ? tr('cue.closer') : tr('cue.back'));
         } else if (needsStraightening) {
           setCue(tr('cue.straighten'));
         } else if (tiltDirection) {
@@ -1190,7 +1199,7 @@
       // Where the subject should stand; fall back to a plain rule-of-thirds point.
       // != null, not truthiness: a legitimate 0 coordinate must not fall through to the default.
       const p = r.placement;
-      standPos = (p && p.x != null && p.y != null) ? { x: p.x, y: p.y } : { x: 1/3, y: 2/3 };
+      standPos = (p && p.x != null && p.y != null) ? { x: p.x, y: p.y } : { x: 1/3, y: 0.88 };
       standReason = (p && p.reason) ? trOr('reason.' + p.reason, p.reason_text || '')
                                     : ((p && p.reason_text) || '');
 

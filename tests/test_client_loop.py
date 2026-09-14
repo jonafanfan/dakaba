@@ -125,8 +125,10 @@ def run(extra):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+# 0.88 is where the engine actually puts the feet. The old fixtures used 0.667, a value
+# _compute_placement can no longer produce — they passed while describing a frame nobody sees.
 SCAN = """
-  standPos = { x: 0.667, y: 0.667 };
+  standPos = { x: 0.667, y: 0.88 };
   standReason = 'Light falls on your face';
   coachingActive = true;
   liveActive = true;
@@ -222,20 +224,47 @@ def test_no_subject_asks_them_into_frame():
 
 
 def test_subject_off_to_one_side_is_told_which_way():
-    assert cue_for("subject.seen = true; subject.x = 0.30; subject.y = 0.667;") == "Move them right"
-    assert cue_for("subject.seen = true; subject.x = 0.95; subject.y = 0.667;") == "Move them left"
+    assert cue_for("subject.seen = true; subject.x = 0.30; subject.y = 0.88;") == "Move them right"
+    assert cue_for("subject.seen = true; subject.x = 0.95; subject.y = 0.88;") == "Move them left"
 
 
 def test_subject_too_far_or_too_near_is_told_so():
     """Feet higher in frame than the marker means further away."""
     assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.40;") == "Bring them closer"
-    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.95;") == "Send them back"
+    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.99;") == "Send them back"
+
+
+def test_the_depth_tolerance_is_tighter_below_the_marker_than_above():
+    """The frame is asymmetric, so the tolerance has to be.
+
+    With the feet at 0.88 there is only ~0.12 of picture below the marker and 0.88 above it. One
+    tolerance both ways would need feet past the bottom edge before "send them back" could fire,
+    which is to say never — and someone standing too close is exactly who needs telling, because
+    a few steps more and the tracker loses their legs off the bottom of the frame entirely.
+    """
+    near = "subject.seen = true; subject.x = 0.667; subject.y = 0.96;"    # 0.08 too close
+    far = "subject.seen = true; subject.x = 0.667; subject.y = 0.80;"     # 0.08 too far
+    assert cue_for(near) == "Send them back", "0.08 too close should be corrected"
+    assert cue_for(far) == "Perfect — take the photo", "0.08 too far is within tolerance"
+
+
+def test_the_marker_is_not_green_while_a_depth_cue_is_showing():
+    """Otherwise the app contradicts itself: a green marker saying you are in position, over a cue
+    telling you to move. They read the same tolerance for exactly this reason."""
+    out = run(SCAN + """
+      tracker.landmarker = {}; streak = CONFIRM_FRAMES;
+      subject.seen = true; subject.x = 0.667; subject.y = 0.99;
+      liveLoop(1234);
+      console.log(JSON.stringify({ onMarker, cue: cues[cues.length - 1] }));
+    """)
+    assert out["cue"] == "Send them back"
+    assert out["onMarker"] is False, "green marker under a move cue"
 
 
 def test_position_is_settled_before_the_camera_is_mentioned():
     """Someone still walking into place must not also be told to straighten the camera."""
     cue = cue_for("""
-      subject.seen = true; subject.x = 0.30; subject.y = 0.667;
+      subject.seen = true; subject.x = 0.30; subject.y = 0.88;
       needsStraightening = true; liveLean = 20; tiltDirection = 'down';
     """)
     assert cue == "Move them right", f"camera cue jumped the queue: {cue!r}"
@@ -244,24 +273,24 @@ def test_position_is_settled_before_the_camera_is_mentioned():
 def test_dead_space_is_cued_when_the_horizon_is_fine():
     """Phrased at render time from the direction, not stored as a finished sentence — see
     test_client_i18n for why that distinction is load-bearing."""
-    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.667; tiltDirection = 'down'; tiltFallback = 'engine wording';") == \
+    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.88; tiltDirection = 'down'; tiltFallback = 'engine wording';") == \
         "Empty space above — aim a little lower"
 
 
 def test_an_unphraseable_direction_falls_back_to_the_engines_wording():
-    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.667; tiltDirection = 'sideways'; tiltFallback = 'Engine wording';") == \
+    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.88; tiltDirection = 'sideways'; tiltFallback = 'Engine wording';") == \
         "Engine wording"
 
 
 def test_straightening_takes_priority_over_the_tilt_hint():
-    cue = cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.667; needsStraightening = true; liveLean = 20; tiltDirection = 'down';")
+    cue = cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.88; needsStraightening = true; liveLean = 20; tiltDirection = 'down';")
     assert cue == "Straighten the camera", f"tilt hint jumped the queue: {cue!r}"
 
 
 def test_the_needs_fix_class_follows_the_straighten_cue():
     out = run(SCAN + """
       tracker.landmarker = {}; streak = CONFIRM_FRAMES;
-      subject.seen = true; subject.x = 0.667; subject.y = 0.667;
+      subject.seen = true; subject.x = 0.667; subject.y = 0.88;
       needsStraightening = true; liveLean = 20;
       liveLoop(1234);
       needsStraightening = false;
@@ -274,14 +303,14 @@ def test_the_needs_fix_class_follows_the_straighten_cue():
 
 
 def test_camera_cues_come_once_they_are_on_the_marker():
-    on_marker = "subject.seen = true; subject.x = 0.667; subject.y = 0.667;"
+    on_marker = "subject.seen = true; subject.x = 0.667; subject.y = 0.88;"
     assert cue_for(on_marker + "needsStraightening = true; liveLean = 20;") == "Straighten the camera"
     assert cue_for(on_marker + "tiltDirection = 'down'; tiltFallback = 'engine wording';") == \
         "Empty space above — aim a little lower"
 
 
 def test_everything_satisfied_says_take_the_photo():
-    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.667;") \
+    assert cue_for("subject.seen = true; subject.x = 0.667; subject.y = 0.88;") \
         == "Perfect — take the photo"
 
 
@@ -289,7 +318,7 @@ def test_the_marker_is_green_only_when_someone_is_on_it():
     """Orange means 'not yet' at a glance — the whole point of the colour."""
     out = run(SCAN + """
       tracker.landmarker = {};
-      subject.seen = true; subject.x = 0.667; subject.y = 0.667;
+      subject.seen = true; subject.x = 0.667; subject.y = 0.88;
       liveLoop(1234);
       const wasOn = onMarker;
       subject.x = 0.20;
@@ -321,7 +350,7 @@ def test_a_single_detection_frame_is_not_believed():
 def test_confirmation_is_required_before_the_marker_can_go_green():
     out = run(SCAN + """
       tracker.landmarker = {};
-      subject.seen = true; subject.x = 0.667; subject.y = 0.667;
+      subject.seen = true; subject.x = 0.667; subject.y = 0.88;
       streak = CONFIRM_FRAMES;
       liveLoop(1234);
       console.log(JSON.stringify({ onMarker }));
@@ -339,7 +368,7 @@ def test_the_marker_stays_orange_when_nobody_has_been_seen():
     out = run(SCAN + """
       tracker.landmarker = {}; streak = CONFIRM_FRAMES;
       subject.seen = false;             // nobody in shot ...
-      subject.x = 0.667; subject.y = 0.667;   // ... but the last sighting was right on the marker
+      subject.x = 0.667; subject.y = 0.88;   // ... but the last sighting was right on the marker
       liveLoop(1234);
       console.log(JSON.stringify({ onMarker, cue: cues[cues.length - 1] }));
     """)

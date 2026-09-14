@@ -74,13 +74,13 @@ def _compute_placement(gray, saliency_map) -> dict:
     dimmer side so the light falls on the face) — each gated to only vote when it's reliable for
     this scene, plus a hard BACKLIGHT VETO (never stand in front of a blown-out region, which
     would silhouette the subject). x snaps to a rule-of-thirds line. Never raises; falls back
-    to {2/3, 2/3}.
+    to {2/3, 0.88}.
 
     `reason` names the signal that actually decided the side, so the client can explain the marker
     rather than showing an unexplained dot. The work was already being done and thrown away.
     """
     FALLBACK = {
-        "x": round(2 / 3, 3), "y": round(2 / 3, 3),
+        "x": round(2 / 3, 3), "y": 0.88,
         "reason": "default", "reason_text": PLACEMENT_REASONS["default"],
     }
     try:
@@ -149,17 +149,23 @@ def _compute_placement(gray, saliency_map) -> dict:
             agreeing = {k: abs(v) for k, v in contributions.items() if v != 0 and (v > 0) == right}
             reason = max(agreeing, key=agreeing.get) if agreeing else "default"
 
-        # Headroom: adapt y to where the saliency mass sits vertically.
-        y = 2 / 3
+        # Where the FEET go, measured from the top. This band was 0.62-0.70, which asked for a
+        # standing person whose feet sat two thirds up the picture and left the bottom third as
+        # bare ground — and, because the client compares a tracked ankle against this number, it
+        # told anyone standing at a natural distance to keep walking backwards. A full-body frame
+        # puts the feet near the bottom with a little floor beneath them, so the band moves there.
+        # The spread stays the same shape: lower when the top of the frame is busy, higher when
+        # there is foreground to stand clear of.
+        y = 0.88
         if saliency_reliable:
             m = float(sal.mean()) + 1e-6
             if float(sal[:H // 3].mean()) > 1.6 * m:
-                y = 0.70
+                y = 0.90
             elif float(sal[2 * H // 3:].mean()) > 1.8 * m:
-                y = 0.62
+                y = 0.84
         return {
             "x": round(float(x), 3),
-            "y": round(min(0.72, max(0.60, y)), 3),
+            "y": round(min(0.94, max(0.80, y)), 3),
             "reason": reason,
             "reason_text": PLACEMENT_REASONS[reason],
         }
