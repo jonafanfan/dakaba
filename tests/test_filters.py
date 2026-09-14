@@ -166,6 +166,47 @@ def test_warm_is_warmer_than_its_own_base_grade():
     assert tint_of(graded["Dramatic Cool"]["grey"]) < tint_of(graded["Dramatic"]["grey"])
 
 
+def saturation_of(rgb):
+    """Distance between the strongest and weakest channel, as a fraction of the strongest.
+
+    A cheap stand-in for HSV saturation, and the right one here: what "oversaturated" looks like on
+    a face is the red channel pulling away from the other two.
+    """
+    hi, lo = max(rgb), min(rgb)
+    return 0.0 if hi == 0 else (hi - lo) / hi
+
+
+def test_vivid_lifts_colour_without_cooking_it():
+    """Vivid at 1.5 pushed skin past healthy into sunburn. It is a lift, not a costume.
+
+    Measured on real skin rather than a test pattern, because skin is where oversaturation gets
+    noticed first and where this app points the camera. The band is wide on purpose: the exact
+    number is a taste call and will get nudged again, but a grade that adds less than a tenth is
+    not doing anything and one that adds half is shouting.
+
+    Only the untinted grade, deliberately. This measure is the spread between the strongest and
+    weakest channel, and a white balance shift moves that on its own: the warm tint lifts red on
+    skin, whose weakest channel is blue, so it reads as +55% saturation while the cool tint reads
+    as -12%. Neither number says anything about the saturate() multiplier, which is what this test
+    is about. The tint tests above cover the variants, and the ordering test below covers the
+    family.
+    """
+    graded = grade(SKIN)["Vivid"]
+    for label, rgb in graded.items():
+        lift = saturation_of(rgb) / saturation_of(SKIN[label])
+        assert 1.08 <= lift <= 1.40, f"Vivid multiplies {label} skin saturation by {lift:.2f}"
+
+
+def test_the_vivid_family_stays_one_grade():
+    """Warm and Cool are variants of Vivid, so they cannot be louder than it. When only the plain
+    one was dialled down, its own variants came out stronger than the thing they vary."""
+    defs = filter_defs()
+    sat = lambda name: float(re.search(r"saturate\(([\d.]+)\)", defs[name]).group(1))
+    assert sat("Vivid") >= sat("Vivid Warm") >= sat("Vivid Cool"), (
+        f"Vivid {sat('Vivid')}, Warm {sat('Vivid Warm')}, Cool {sat('Vivid Cool')}"
+    )
+
+
 def test_every_tint_reference_resolves():
     """A url() in a grade needs three things to line up: the SVG filter the preview uses, the TINT
     entry the baking path uses, and the same id in both. Miss the SVG and the preview silently

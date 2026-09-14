@@ -667,9 +667,13 @@
     // skin reads as ill. Both land near a ±20 shift on a neutral grey, measured — for reference,
     // Silvertone's tint is +15.
     const FILTER_CSS = {
-      'Vivid':         'saturate(1.5) contrast(1.12)',
-      'Vivid Warm':    'url(#warmTint) saturate(1.45) contrast(1.1)',
-      'Vivid Cool':    'url(#coolTint) saturate(1.4) contrast(1.1) brightness(1.02)',
+      // The Vivid family came down 0.15 each: 1.5 pushed skin past healthy into sunburn, and
+      // foliage past green into poster paint. The three move together so the family still reads as
+      // one grade with two temperatures — dropping only the untinted one would leave the warm and
+      // cool variants looking louder than the thing they are variants of.
+      'Vivid':         'saturate(1.35) contrast(1.12)',
+      'Vivid Warm':    'url(#warmTint) saturate(1.30) contrast(1.1)',
+      'Vivid Cool':    'url(#coolTint) saturate(1.25) contrast(1.1) brightness(1.02)',
       'Dramatic':      'contrast(1.3) saturate(0.9) brightness(0.95)',
       'Dramatic Warm': 'url(#warmTint) contrast(1.3) saturate(1.0) brightness(0.96)',
       'Dramatic Cool': 'url(#coolTint) contrast(1.32) saturate(0.92) brightness(0.96)',
