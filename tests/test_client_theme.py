@@ -86,6 +86,30 @@ def test_color_scheme_follows_the_choice():
         )
 
 
+def test_the_battery_icon_is_drawn_heavier_in_dark():
+    """A 1px light hairline on near-black reads far weaker than the same line dark-on-light. Not a
+    contrast problem — it measures 6.3:1 in dark against 3.1:1 in light — but a perceptual one, and
+    it is why the BAT text beside it showed while the battery did not.
+
+    Both dark routes have to carry the weight, or the icon comes back depending on whether you
+    reached dark by choosing it or by having a dark phone.
+    """
+    text = css()
+    base = re.search(r"\.hud-bat-bar \{(.*?)\}", text, re.S)
+    assert base, "no .hud-bat-bar rule"
+    weight = re.search(r"box-shadow: inset 0 0 0 ([\d.]+)px", base.group(1))
+    assert weight, "the outline is no longer a box-shadow this test can measure"
+
+    dark_rules = re.findall(r"\.hud-bat-bar \{ box-shadow: inset 0 0 0 ([\d.]+)px", text)
+    assert len(dark_rules) == 2, (
+        f"expected both dark routes to weight the icon, found {len(dark_rules)}"
+    )
+    for value in dark_rules:
+        assert float(value) > float(weight.group(1)), (
+            f"dark draws the outline at {value}px, no heavier than light's {weight.group(1)}px"
+        )
+
+
 # ── behaviour ────────────────────────────────────────────────────────────────
 
 THEME_STUB = """

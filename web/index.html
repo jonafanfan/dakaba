@@ -104,8 +104,22 @@
     .hud-rec { top: calc(var(--hud-gap) * -1); left: 2px; }
     .hud-time { top: calc((var(--hud-gap) - 4px) * -1); left: 50%; transform: translateX(-50%); }
     .hud-bat { top: calc((var(--hud-gap) + 3px) * -1); right: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-    .hud-bat-bar { width: 26px; height: 9px; border: 1px solid var(--text2); border-radius: 1px; padding: 1px; }
-    .hud-bat-fill { width: 70%; height: 100%; background: var(--text2); }
+    /* The outline is drawn with a shadow rather than a border, so it can be 1px in light and 1.5
+       in dark without changing the icon's size. A 1px light hairline on a near-black ground reads
+       far weaker than the same hairline dark-on-light — not a contrast problem (this measures
+       6.3:1 in dark against 3.1:1 in light) but a perceptual one: the display bleeds a thin bright
+       line outwards until it is barely there, which is why the BAT text beside it still showed and
+       the battery did not. The fill is the more legible half, so it grows to carry more of the
+       shape. */
+    .hud-bat-bar {
+      width: 26px; height: 10px; border-radius: 2px; padding: 2px;
+      box-shadow: inset 0 0 0 1px var(--text2);
+    }
+    .hud-bat-fill { width: 80%; height: 100%; background: var(--text2); border-radius: 1px; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .hud-bat-bar { box-shadow: inset 0 0 0 1.5px var(--text2); }
+    }
+    :root[data-theme="dark"] .hud-bat-bar { box-shadow: inset 0 0 0 1.5px var(--text2); }
     .hud-format { bottom: calc(var(--hud-gap) * -1); right: 2px; }
 
     .title-block { display: flex; flex-direction: column; align-items: center; }
