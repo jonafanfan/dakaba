@@ -706,6 +706,39 @@ def test_retake_costs_no_api_call():
     assert out["fetches"] == 0, "retake must not re-analyse the scene"
 
 
+# ── share vs save ────────────────────────────────────────────────────────────
+
+def test_save_does_not_open_the_share_sheet():
+    """They used to be the same call with different arguments, so both buttons opened the OS sheet
+    and Save looked broken. Save writes the file; only Share asks the OS anything."""
+    out = run("""
+      capturedImg = { naturalWidth: 100, naturalHeight: 100 };
+      let shared = 0, downloaded = 0;
+      // The harness binds `navigator` as a const, so it is extended rather than replaced.
+      navigator.canShare = () => true;
+      navigator.share = () => { shared++; return Promise.resolve(); };
+      globalThis.URL = { createObjectURL: () => 'blob:x', revokeObjectURL(){} };
+      document.createElement = (t) => {
+        const el = { style: {}, classList: { add(){}, remove(){}, toggle(){} },
+                     getContext: () => ({ drawImage(){}, getImageData: () => ({ data: [] }), putImageData(){} }),
+                     toBlob: (cb) => cb({}), click: () => { if (t === 'a') downloaded++; },
+                     remove(){}, appendChild(){}, addEventListener(){} };
+        return el;
+      };
+      document.body = { appendChild(){} };
+      savePhoto().then(() => console.log(JSON.stringify({ shared, downloaded })));
+    """)
+    assert out["shared"] == 0, "Save opened the share sheet"
+    assert out["downloaded"] == 1, "Save did not write the file"
+
+
+def test_the_saved_file_is_named_per_shot():
+    """A camera roll of daka.jpg, daka(1).jpg is nobody's idea of a keeper."""
+    out = run("console.log(JSON.stringify({ a: filename(), b: filename() }));")
+    assert out["a"].startswith("dakaba-") and out["a"].endswith(".jpg")
+    assert out["a"] != "daka.jpg"
+
+
 def test_retake_does_nothing_without_an_analysis():
     """Defensive: the button is only reachable from the results screen, but a stale tap or a
     restored session should not put the app into coaching with no marker to show."""

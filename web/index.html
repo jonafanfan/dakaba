@@ -1346,19 +1346,31 @@
         cv.toBlob(b => resolve(b), 'image/jpeg', 0.95);
       });
     }
-    async function shareOrSave(useShare) {
+    // Share and Save are two different things now. Save used to call navigator.share() as well,
+    // just without the hashtags, so both buttons opened the same sheet and the second one looked
+    // broken. Save writes the file straight out; only Share asks the OS anything.
+    function filename() {
+      // Dated, because a camera roll full of daka.jpg, daka(1).jpg is nobody's idea of a keeper.
+      const d = new Date(), p = (n) => String(n).padStart(2, '0');
+      return `dakaba-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
+    }
+
+    async function sharePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
       const tags = (analysisResult && analysisResult.hashtags || []).join(' ');
-      const file = new File([blob], 'daka.jpg', { type: 'image/jpeg' });
-      if (useShare && navigator.canShare && navigator.canShare({ files: [file] })) {
+      const file = new File([blob], filename(), { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try { await navigator.share({ files: [file], text: tags }); return; } catch (e) { if (e.name === 'AbortError') return; }
       }
-      if (!useShare && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
-      }
+      savePhoto();          // no share support (most desktops) — saving is the useful thing left
+    }
+
+    async function savePhoto() {
+      if (!capturedImg) return;
+      const blob = await bakeBlob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'daka.jpg';
+      const a = document.createElement('a'); a.href = url; a.download = filename();
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast(tr('toast.saved'));
@@ -1404,8 +1416,8 @@
     $('shutter').addEventListener('click', scanScene);
     $('takePhotoBtn').addEventListener('click', takePhoto);
     $('rescanBtn').addEventListener('click', () => setCamState('idle'));
-    $('shareBtn').addEventListener('click', () => shareOrSave(true));
-    $('saveBtn').addEventListener('click', () => shareOrSave(false));
+    $('shareBtn').addEventListener('click', sharePhoto);
+    $('saveBtn').addEventListener('click', savePhoto);
     $('retakeBtn').addEventListener('click', retake);
     $('scanAgain').addEventListener('click', () => { if (hasCamera) { setCamState('idle'); show('camera'); startLive(); } else { stopLive(); show('home'); } });
     $('gateScanAgain').addEventListener('click', closeGate);
