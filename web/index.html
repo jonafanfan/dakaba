@@ -435,7 +435,7 @@
       </div>
     </div>
     <div class="home-bottom">
-      <button class="start-btn" id="startBtn">开始打卡</button>
+      <button class="start-btn" id="startBtn" data-i18n="home.start">Start</button>
       <div class="hint" data-i18n="home.hint">Point at an empty scene to begin</div>
     </div>
   </section>
@@ -550,8 +550,10 @@
        language you speak. The scan now sends `lang` and the model writes every free-text field in
        that one language.
 
-       Three things deliberately do NOT move:
-       - the 打卡吧！ wordmark and 开始打卡 button — those are the brand, not copy;
+       Two things deliberately do NOT move:
+       - the 打卡吧！ wordmark — that is the logo, not copy. The 开始打卡 button used to be listed
+         here with it, but it is the one control on the screen and a reader who cannot read it has
+         nothing to press. A logo can be foreign; a button cannot;
        - filter names in FILTER_CSS — the server picks one by exact string, so they are keys;
        - text already on screen from a previous scan. The scene name and the standing hint were
          written by the model in the old language, and retranslating them would mean paying for
@@ -563,6 +565,7 @@
     const LANGS = ['en', 'zh'];
     const STRINGS = {
       en: {
+        'home.start': 'Start',
         'home.hint': 'Point at an empty scene to begin',
 
         'cam.shutterHint': 'Point at an empty scene and tap',
@@ -619,6 +622,7 @@
         'err.server': 'Server error',
       },
       zh: {
+        'home.start': '开始打卡',
         'home.hint': '对准一个没有人的场景即可开始',
 
         'cam.shutterHint': '对准空场景，轻点快门',
