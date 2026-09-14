@@ -530,6 +530,48 @@ def test_a_pose_with_hidden_legs_is_rejected():
     assert out["seen"] is False, "trusted a foot position the model could not actually see"
 
 
+def test_detection_runs_on_a_downscaled_frame_not_the_camera_track():
+    """The bug: MediaPipe uploads whatever it is handed as a GPU texture, and the capture track
+    went to 4096 wide — which is the maximum texture size on a great many mobile GPUs. On those the
+    call throws rather than runs slowly, the catch swallowed it, and detection silently never
+    happened. No subject, no green marker, no cues, and nothing on screen saying why.
+    """
+    out = run(SCAN + FAKE_POSE + """
+      let seen = null;
+      tracker.landmarker = { detectForVideo: (src) => { seen = src; return { landmarks: [pose()] }; } };
+      detectSubject($('video'), 2000);
+      // Not an identity check: the DOM stub hands back a fresh object per getElementById, so
+      // `seen === $('video')` is false however the page behaves. The widths differ, which is the
+      // thing that actually distinguishes them — the stub's video is 390 wide, the canvas is
+      // whatever DETECT_WIDTH says.
+      console.log(JSON.stringify({
+        width: seen && seen.width, expected: DETECT_WIDTH, videoWidth: $('video').width,
+      }));
+    """)
+    assert out["expected"] != out["videoWidth"], (
+        "the stub's video happens to be DETECT_WIDTH wide — this test can no longer tell them apart"
+    )
+    assert out["width"] == out["expected"], (
+        f"model was handed a {out['width']}px source, not the {out['expected']}px detection canvas"
+    )
+    assert out["expected"] <= 640, f"detection frame is {out['expected']}px — wider than pose needs"
+
+
+def test_a_throwing_model_is_reported_rather_than_swallowed():
+    """Silence is what cost us the bug above: there was no way to tell a model that had found
+    nobody from one that was failing on every single call."""
+    out = run(SCAN + FAKE_POSE + """
+      const errors = [];
+      console.error = (...a) => errors.push(a.join(' '));
+      tracker.landmarker = { detectForVideo: () => { throw new Error('texture too large'); } };
+      detectSubject($('video'), 2000);
+      detectSubject($('video'), 3000);
+      console.log(JSON.stringify({ errors: errors.length, text: errors[0] || '' }));
+    """)
+    assert out["errors"] == 1, "should log once, not on every frame — this runs 10x a second"
+    assert "texture too large" in out["text"]
+
+
 def test_the_model_is_configured_with_raised_confidence_floors():
     """Asserted statically, not behaviourally: the fake tracker replaces the model entirely, so
     nothing here can exercise MediaPipe's own thresholds. The defaults are 0.5, which is tuned for

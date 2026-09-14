@@ -837,6 +837,27 @@
     const CONFIRM_FRAMES = 3;
     let streak = 0;
 
+    // Detection runs on a downscaled copy, not on the camera frame.
+    //
+    // MediaPipe uploads whatever you hand it as a GPU texture. Once the capture track went to
+    // 4096x3072 that is ~50MB a frame, for a model that works perfectly well on a few hundred
+    // pixels — and 4096 is exactly the maximum texture size on a great many mobile GPUs, so on
+    // those the call does not run slowly, it throws. The catch below then swallows it and
+    // detection silently never happens: no subject, no green marker, no movement cues, and
+    // nothing on screen saying why.
+    //
+    // Landmarks come back normalised, and this scales both axes by the same factor, so the
+    // coordinates are identical to what the full frame would have produced.
+    const _det = document.createElement('canvas');
+    const DETECT_WIDTH = 480;
+
+    function detectFrame(video) {
+      const h = Math.max(1, Math.round(DETECT_WIDTH * video.videoHeight / video.videoWidth));
+      if (_det.width !== DETECT_WIDTH || _det.height !== h) { _det.width = DETECT_WIDTH; _det.height = h; }
+      _det.getContext('2d').drawImage(video, 0, 0, DETECT_WIDTH, h);
+      return _det;
+    }
+
     function detectSubject(video, ts) {
       if (!tracker.landmarker || !video.videoWidth) return;
       // ~10fps is plenty for coaching a person who is walking, and leaves the phone alone.
@@ -844,7 +865,14 @@
       lastDetect = ts;
 
       let res;
-      try { res = tracker.landmarker.detectForVideo(video, ts); } catch (e) { return; }
+      try { res = tracker.landmarker.detectForVideo(detectFrame(video), ts); }
+      catch (e) {
+        // Once, not every frame: this runs ten times a second and a repeating log is unreadable.
+        // Silent is what cost us this bug — there was no way to tell a model that had found
+        // nobody from one that was failing on every call.
+        if (!detectSubject.warned) { detectSubject.warned = true; console.error('pose detection:', e); }
+        return;
+      }
       const poses = (res && res.landmarks) || [];
       if (!poses.length) {
         streak = 0;
@@ -940,7 +968,7 @@
     async function startCamera() {
       await requestMotion();     // must precede getUserMedia — see requestMotion
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 }, frameRate: { ideal: 30 } }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2880 }, frameRate: { ideal: 30 } }, audio: false });
         $('video').srcObject = stream;
         $('videoBackdrop').srcObject = stream;   // same stream, so they can never disagree
         hasCamera = true;
@@ -971,8 +999,8 @@
     async function switchLens(lens) {
       if (lens === currentLens) return;
       const constraints = (lens === 'ultra' && ultraDeviceId)
-        ? { video: { deviceId: { exact: ultraDeviceId }, width: { ideal: 4096 }, height: { ideal: 3072 }, frameRate: { ideal: 30 } }, audio: false }
-        : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 }, frameRate: { ideal: 30 } }, audio: false };
+        ? { video: { deviceId: { exact: ultraDeviceId }, width: { ideal: 3840 }, height: { ideal: 2880 }, frameRate: { ideal: 30 } }, audio: false }
+        : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2880 }, frameRate: { ideal: 30 } }, audio: false };
       try {
         const ns = await navigator.mediaDevices.getUserMedia(constraints);
         if (stream) stream.getTracks().forEach(t => t.stop());
