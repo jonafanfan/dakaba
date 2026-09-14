@@ -2,14 +2,9 @@
 
 A mobile web app that tells you **where to stand** for a good check-in photo.
 
-Point the camera at an empty scene and tap. A vision model looks at the frame — the light, the
-furniture, the doorway or bench worth using — and returns one plain sentence saying where to stand,
-in the app's current language: *"Stand next to the drawer"* / *"站在抽屉旁边"*. The app shows it once
-above the shutter, your subject stands there, you shoot.
-
-There used to be an in-frame marker here, computed from OpenCV heuristics (visual balance,
-background clutter, blown-out regions) with a live MediaPipe pose model tracking the subject
-against it. Removed — see **Known issues** for why — in favour of the single sentence above.
+Point the camera at an empty scene and tap. The backend analyses the frame — light direction,
+visual balance, background clutter, blown-out regions — and returns the spot where a person should
+stand for the best composition. The app draws a marker there, your subject stands on it, you shoot.
 
 The guiding idea: **subject positioning, framing and basic colour grading are what make the photo.**
 Posing is left to the person being photographed.
@@ -39,9 +34,13 @@ Home  →  camera  →  point at an empty scene, tap shutter
                          ↓
          capture gate: reject if lighting is Poor or the frame is blurry
                          ↓
-    placement_hint shown as static text above the shutter ("Stand next to the drawer")
+    standing marker drawn at the returned placement point, with the depth
+    sentence (placement_hint) above the shutter — "Stand in front of the door"
                          ↓
-   subject stands there  →  straighten/tilt cues from the phone's own sensors  →  take the photo
+      MediaPipe pose tracks the subject's ankles against it: cues to move them
+      left/right/closer/back, then straighten/tilt from the phone's own sensors
+                         ↓
+        marker turns green once they are on the spot  →  take the keeper photo
                          ↓
          results: filter preview, hashtag pills, share/save
 ```
@@ -52,7 +51,7 @@ Home  →  camera  →  point at an empty scene, tap shutter
 
 | Piece | File | Notes |
 |---|---|---|
-| Frontend (all of it) | [`web/index.html`](web/index.html) | ~850 lines, HTML + CSS + JS inline. No build step. |
+| Frontend (all of it) | [`web/index.html`](web/index.html) | ~1460 lines, HTML + CSS + JS inline. No build step. |
 | API | [`api_server.py`](api_server.py) | FastAPI. Two routes: `/health`, `POST /analyze`. |
 | Engine | [`scene_analysis.py`](scene_analysis.py) | OpenCV measurements + one vision-model call. |
 | Response contract | [`CONTRACT.md`](CONTRACT.md) | **Read this before changing the response shape.** |
@@ -60,31 +59,27 @@ Home  →  camera  →  point at an empty scene, tap shutter
 ### The engine is deliberately split in two
 
 **OpenCV does the measurable half** — brightness, colour balance, Canny edge density, Laplacian
-blur, spectral-residual saliency, and Hough-line horizon tilt. This feeds `lighting`, `composition`,
-`blueprint`, the blur gate, and `camera_tilt` (aim off a dead third of the frame).
+blur, spectral-residual saliency, Hough-line horizon tilt, and the placement heuristic. This is the
+part that carries the product.
 
-**The vision model does the rest** — scene name, filter choice, hashtags, and, since the marker was
-removed, the entire standing guide (`placement_hint`). That used to be a smaller, subjective half;
-removing the OpenCV-computed marker moved positioning itself into this half, which is the one
-consequence worth knowing before touching either side — see the callout below.
+**The vision model does the subjective half** — scene name, filter choice, hashtags, and the depth
+sentence (`placement_hint`) that refines the marker. Four fields, and the positioning itself does
+not depend on any of them.
 
-A vision-call failure still returns a usable scan with `scene_type: "Unknown"` rather than failing
-outright — the OpenCV-computed fields never needed the model. But **positioning guidance now needs
-the model too**: a degraded scan has `placement_hint: ""` and nothing to show above the shutter,
-where it previously still had a marker computed from OpenCV alone. See
-[`CONTRACT.md`](CONTRACT.md) §3.6 and §3.8. One further consequence for consumers — **a `200` is
-not proof the model ran.**
+That split is why a vision-call failure returns a usable scan with `scene_type: "Unknown"` instead
+of failing: the positioning advice never needed the model. One consequence for consumers — **a
+`200` is not proof the model ran.** See [`CONTRACT.md`](CONTRACT.md) §3.6.
 
-There used to be a `_compute_placement` heuristic here — visual balance (stand opposite the
-scene's focal mass), background cleanliness (prefer the emptier side), light direction (stand on
-the dimmer side so light falls on your face), plus a hard backlight veto. It was removed along with
-the marker it drove; see **Known issues** below for why, and `git show` on the commit that removed
-it if the heuristic itself is ever wanted back.
+`_compute_placement` is the core of it: it fuses visual balance (stand opposite the scene's focal
+mass), background cleanliness (prefer the emptier side), and light direction (stand on the dimmer
+side so light falls on your face), plus a hard **backlight veto** so you're never placed in front of
+a blown-out window. Each signal only votes when it's reliable for that scene.
 
-Some of what it guaranteed is now *asked for* in the prompt instead — front or side light rather
-than a silhouette, a spot that is actually in frame and walkable, and no instruction about which
-way to face. Asking is weaker than computing: nothing server-side can check the sentence that comes
-back. `CONTRACT.md` §3.8 lists the constraints and says so plainly.
+The prompt behind `placement_hint` carries three constraints of its own — the spot must be in
+frame and walkable, `left`/`right` mean the viewer's, and it must never tell the subject which way
+to face. Those are *asked for*, not computed, and nothing server-side can check the sentence that
+comes back; `CONTRACT.md` §3.8 says so plainly. Light is the exception: the backlight veto above
+guarantees it geometrically, so the prompt does not ask for it as well.
 
 ---
 
@@ -159,7 +154,7 @@ preview can load the UI but not scan. To scan from a preview you'd need to add i
 .venv/Scripts/python -m pytest        # or bare `pytest`
 ```
 
-**268 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
+**342 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
 the fixture makes constructing a real one a test failure.
 
 The three `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
@@ -168,15 +163,16 @@ both were out-of-scope identifiers that only failed when the code actually ran.
 
 | File | Tests | Covers |
 |---|---|---|
-| [`test_openai_paths.py`](tests/test_openai_paths.py) | 83 | moderation, every degradation path, request shapes, `_encode_image`, the `lang` prompt |
+| [`test_openai_paths.py`](tests/test_openai_paths.py) | 89 | moderation, every degradation path, request shapes, `_encode_image`, the `lang` prompt |
+| [`test_client_loop.py`](tests/test_client_loop.py) | 44 | **the render loop, the marker, the cue ladder and the horizon level's gravity maths, run for real in node** |
+| [`test_guidance.py`](tests/test_guidance.py) | 42 | placement reason, dead-space tilt, the model's depth hint, the client/engine filter agreement |
 | [`test_assessments.py`](tests/test_assessments.py) | 40 | lighting, composition, blueprint — thresholds at their boundaries |
 | [`test_api.py`](tests/test_api.py) | 31 | endpoint guards: size cap, rate limit, error mapping, CORS, `lang` |
-| [`test_guidance.py`](tests/test_guidance.py) | 30 | dead-space tilt, the model's standing sentence, the client/engine filter agreement |
-| [`test_client_i18n.py`](tests/test_client_i18n.py) | 19 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the tilt cue's key |
-| [`test_client_overlay.py`](tests/test_client_overlay.py) | 15 | `visibleCrop` maths and the camera-region layout invariants |
+| [`test_client_i18n.py`](tests/test_client_i18n.py) | 25 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the marker caption and tilt cue keys |
+| [`test_placement.py`](tests/test_placement.py) | 22 | every directional claim in `_compute_placement`, including the backlight veto |
+| [`test_client_overlay.py`](tests/test_client_overlay.py) | 21 | marker drawing, `visibleCrop` maths and the camera-region layout invariants |
 | [`test_filters.py`](tests/test_filters.py) | 14 | pixel-baked filters match the CSS preview exactly |
-| [`test_client_loop.py`](tests/test_client_loop.py) | 23 | **the render loop, the tilt/straighten cues and the horizon level's gravity maths, run for real in node** |
-| [`test_features.py`](tests/test_features.py) | 13 | `extract_features` on synthetic scenes, all three blur regimes |
+| [`test_features.py`](tests/test_features.py) | 14 | `extract_features` on synthetic scenes, all three blur regimes |
 
 CI runs the suite on every PR to `main` ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)).
 Test-only dependencies live in `requirements-dev.txt` so Render's build stays lean.
@@ -241,42 +237,31 @@ was judged better than refusing every scan during an outage, but it is a bypass.
 
 ## Known issues
 
-**The standing marker and its subject tracking are gone.** The app used to draw an in-frame
-footprint at an OpenCV-computed `placement` point, with a MediaPipe pose model tracking the
-subject's ankles against it live (green when on the spot, cues like "Move them left" otherwise).
-Removed: positioning guidance is now a single sentence from the vision model
-(`placement_hint`, e.g. "Stand next to the drawer"), shown once as static text above the shutter.
-This trades a live, self-correcting cue for a simpler one that costs nothing extra (the same vision
-call already ran) but cannot tell the user whether they're actually standing in the right spot, and
-— see the OpenAI-dependency callout above — no longer degrades gracefully to *any* positioning
-guidance when the vision call fails. The removed code (`_compute_placement`, the MediaPipe
-integration, the marker-drawing and subject-detection loop in `web/index.html`) is recoverable from
-git history if live tracking is ever wanted back.
-
 **No "you've moved since scanning" warning.** There used to be a two-dot framing lock for this, but
-it was removed because it couldn't work, before the marker itself was later removed too. It read
-yaw from `deviceorientation.alpha`, and a phone held upright with the rear camera on the horizon
-sits at `beta ≈ 90°` — the gimbal-lock singularity of the W3C `Z-X'-Y''` angle sequence, where
-`alpha` and `gamma` become degenerate. `alpha` swung wildly while the phone was nearly still, so the
-dots jumped and never settled. Not a tuning problem and not a sign error: the sensor can't separate
-yaw from roll in exactly the pose this app is used in.
+it was removed because it couldn't work. It read yaw from `deviceorientation.alpha`, and a phone
+held upright with the rear camera on the horizon sits at `beta ≈ 90°` — the gimbal-lock singularity
+of the W3C `Z-X'-Y''` angle sequence, where `alpha` and `gamma` become degenerate. `alpha` swung
+wildly while the phone was nearly still, so the dots jumped and never settled. Not a tuning problem
+and not a sign error: the sensor can't separate yaw from roll in exactly the pose this app is used
+in.
 
-A warning like this would need a different signal — integrating `devicemotion.rotationRate` over
-the short scan-to-shoot window. Gravity can measure pitch and roll reliably but cannot measure yaw
-at all, and panning is the main way people re-aim. The horizon level is unaffected either way: it
-reads gravity, not orientation.
+A warning like this would need a different signal — integrating `devicemotion.rotationRate`
+over the short scan-to-shoot window. Gravity can measure pitch and roll reliably but cannot
+measure yaw at all, and panning is the main way people re-aim. Nothing else is affected: the
+standing marker and the horizon level both read gravity, not orientation.
 
 **Extreme blur escapes the blur gate.** Past a point every edge smears below Canny's threshold, edge
 density hits zero, and the "too plain to judge" escape hatch passes the frame — a plain wall and a
 destroyed image are indistinguishable by edge density alone. Probably narrower on real broadband
 scenes than on synthetic tests. Characterised in `test_features.py`.
 
-**One bit of dead-but-harmless code**, found by mutation testing and documented in the tests: the
-`if not content` guard in `_analyze_with_gpt` is redundant with the parse guard below it.
+**Two bits of dead-but-harmless code**, both found by mutation testing and documented in the tests:
+the `y` clamp in `_compute_placement` is unreachable (`y` is only ever `0.62`, `0.667` or `0.70`),
+and the `if not content` guard in `_analyze_with_gpt` is redundant with the parse guard below it.
 
-**Generated but never displayed:** `lighting.tip` and `blueprint.notes`. Both free (pure OpenCV, no
-tokens). `blueprint.notes` speaks directly to framing, so it's the most natural thing to surface
-next — `composition.horizon` already made that jump, driving the live straighten cue.
+**Generated but never displayed:** `lighting.tip`, `composition` and `blueprint.notes`. All free
+(pure OpenCV, no tokens). `composition.horizon` and `blueprint.notes` speak directly to framing, so
+they're the most natural things to surface next.
 
 `pose_tips` was removed in contract `0.10` — see [`CONTRACT.md`](CONTRACT.md) for why. The prompt is
 recoverable from `git show 3878ccb` if it's ever wanted back.

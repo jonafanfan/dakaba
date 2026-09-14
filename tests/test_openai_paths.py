@@ -4,10 +4,9 @@ The client is faked throughout — nothing here touches the network, and the aut
 constructing a real client an outright test failure rather than a silent API call.
 
 What matters here is failure behaviour. The engine's stated design is that a bad completion
-degrades to safe defaults instead of failing the scan, because the OpenCV half (composition,
-lighting, blur, camera tilt) does not need the model at all; the model only supplies the scene
-name, hashtags, filter choice and the standing guide (placement_hint). These tests pin down where
-that promise holds and where it does not.
+degrades to safe defaults instead of failing the scan, because the OpenCV half (placement,
+framing, lighting, blur) is the part carrying the product; the model only supplies the scene name,
+hashtags and filter choice. These tests pin down where that promise holds and where it does not.
 """
 import base64
 import io
@@ -185,6 +184,36 @@ def test_prompt_asks_for_exactly_the_live_fields(monkeypatch):
     assert "pose_tips" not in prompt, "pose_tips was removed in contract 0.10"
 
 
+@pytest.mark.parametrize("x, expected, opposite", [
+    (1 / 3, "left", "right"),
+    (2 / 3, "right", "left"),
+    (0.0, "left", "right"),      # a legitimate 0 must not be read as "no placement"
+    (0.499, "left", "right"),    # either side of the midpoint
+    (0.501, "right", "left"),
+])
+def test_the_prompt_is_told_which_side_the_geometry_picked(monkeypatch, x, expected, opposite):
+    """The hint supplies depth; the marker supplies the side. Telling the model which side the
+    geometry already chose is the only thing stopping the sentence contradicting the marker —
+    "stand by the left window" under a marker on the right.
+
+    Found by mutation testing: inverting this line left the whole suite green, because every other
+    prompt test reads fields the side does not touch.
+    """
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v", {"x": x, "y": 2 / 3})
+    prompt = prompt_text(client)
+    assert f"on the {expected} side of the frame" in prompt
+    assert f"on the {opposite} side of the frame" not in prompt
+
+
+def test_the_side_falls_back_rather_than_raising_without_placement(monkeypatch):
+    """_analyze_with_gpt takes placement as an optional argument, so a caller that omits it — or
+    passes a response with the field missing — must still produce a usable prompt."""
+    client = install(FakeClient(completion=completion("{}")), monkeypatch)
+    _analyze_with_gpt("Zm9v", None)
+    assert "side of the frame" in prompt_text(client)
+
+
 def test_the_hint_is_told_not_to_dictate_which_way_to_face(monkeypatch):
     """Real scans came back telling people to face a window, or away from the camera.
 
@@ -313,7 +342,7 @@ def test_api_errors_degrade_instead_of_raising(monkeypatch, error):
     """A dead API must cost the scene label, not the whole scan.
 
     The OpenCV features are already computed by the time this runs, so raising here would discard
-    work that succeeded and break composition and lighting — neither of which needs the model.
+    work that succeeded and break placement and framing — neither of which needs the model.
     """
     install(FakeClient(completion_error=error), monkeypatch)
     assert _analyze_with_gpt("Zm9v") == {}
@@ -342,7 +371,7 @@ def test_api_error_still_yields_a_usable_scan(monkeypatch, scene_image):
     assert result["scene_type"] == "Unknown"
     assert result["hashtags"] == []
     assert result["filter"] == "Vivid"
-    assert result["placement_hint"] == "", "a dead API must not invent a standing guide"
+    assert result["placement"]["x"] in (round(1 / 3, 3), round(2 / 3, 3))
     assert result["lighting"]["quality"] in ("Good", "Fair", "Poor")
     assert isinstance(result["blurry"], bool)
 
@@ -424,8 +453,8 @@ def test_empty_gpt_result_falls_back_to_safe_defaults(monkeypatch, scene_image):
     assert result["scene_type"] == "Unknown"
     assert result["hashtags"] == []
     assert result["filter"] == "Vivid"
-    # and the OpenCV half — the part that does not need the model — is intact
-    assert result["placement_hint"] == ""
+    # and the OpenCV half — the part that actually carries the product — is intact
+    assert result["placement"]["x"] in (round(1 / 3, 3), round(2 / 3, 3))
     assert result["lighting"]["quality"] in ("Good", "Fair", "Poor")
     assert isinstance(result["blurry"], bool)
 
@@ -452,7 +481,7 @@ def test_response_keys_match_the_contract(monkeypatch, scene_image):
     install(FakeClient(completion=completion("{}")), monkeypatch)
     assert set(analyze_scene(scene_image)) == {
         "scene_type", "blueprint", "lighting", "blurry", "blur_var", "edge_sharpness",
-        "composition", "camera_tilt", "placement_hint", "hashtags", "filter",
+        "composition", "placement", "camera_tilt", "placement_hint", "hashtags", "filter",
     }
 
 
