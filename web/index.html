@@ -879,7 +879,7 @@
     async function startCamera() {
       await requestMotion();     // must precede getUserMedia — see requestMotion
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 }, frameRate: { ideal: 30 } }, audio: false });
         $('video').srcObject = stream;
         $('videoBackdrop').srcObject = stream;   // same stream, so they can never disagree
         hasCamera = true;
@@ -910,8 +910,8 @@
     async function switchLens(lens) {
       if (lens === currentLens) return;
       const constraints = (lens === 'ultra' && ultraDeviceId)
-        ? { video: { deviceId: { exact: ultraDeviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false }
-        : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false };
+        ? { video: { deviceId: { exact: ultraDeviceId }, width: { ideal: 4096 }, height: { ideal: 3072 }, frameRate: { ideal: 30 } }, audio: false }
+        : { video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 }, frameRate: { ideal: 30 } }, audio: false };
       try {
         const ns = await navigator.mediaDevices.getUserMedia(constraints);
         if (stream) stream.getTracks().forEach(t => t.stop());
@@ -1141,23 +1141,38 @@
     // Deliberately NOT using ImageCapture.takePhoto(). It promises a full-sensor still, but on
     // real devices it fires the hardware capture — a visible dark flash — and hands back a black
     // frame often enough to be useless. A canvas grab of the live track is boring and always
-    // works, and the track is already 1080p, which is plenty for a check-in photo.
-    async function grabKeeperDataURL() {
+    // works, and with the track now asking for everything the sensor has, the difference between
+    // the two is much smaller than it was.
+    //
+    // Where the pixels actually went: the viewfinder is 3:4 and the track is 4:3, so the crop the
+    // user framed is the middle 56% of the track's width. At the old 1920x1440 that left
+    // 1080x1440 — 1.6MP, which is what a saved photo was really worth. The crop cannot change
+    // without changing what the app shows, so the only lever is asking for a bigger track.
+    async function grabKeeperURL() {
       const v = $('video'); if (!v.videoWidth) return null;
       const c = visibleCrop(v);                        // same crop the user framed
-      // 2560 is above any track this asks for, so the keeper is saved at native resolution and
-      // this only guards against an unusually large sensor.
-      const [w, h] = scaledSize(c.sw, c.sh, 2560);
+      // 5000 is above the largest mode any phone will hand back for a video track, so this no
+      // longer binds — it is a guard against an absurd sensor, not a resolution policy. It used
+      // to be 2560, which was itself above the old request, so nothing was ever being downscaled
+      // — the ceiling was always the getUserMedia constraint.
+      const [w, h] = scaledSize(c.sw, c.sh, 5000);
       const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
       cv.getContext('2d').drawImage(v, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
-      return cv.toDataURL('image/jpeg', 0.95);
+      // A blob, not a data URL. Base64 costs a third more again in memory, and at 7MP that is
+      // several megabytes of string held alive by two <img> src attributes on a phone.
+      return new Promise(r => cv.toBlob(b => r(b ? URL.createObjectURL(b) : null), 'image/jpeg', 0.95));
     }
-    function loadCaptured(dataURL) {
+    let capturedURL = null;
+    function loadCaptured(url) {
+      // Release the previous shot's blob. Retake and scan-again both come back through here, so
+      // without this every photo taken in a session stays in memory until the tab closes.
+      if (capturedURL && capturedURL.startsWith('blob:')) URL.revokeObjectURL(capturedURL);
+      capturedURL = url;
       capturedImg = new Image();
       // No aspect juggling needed any more: the box is a fixed two thirds of the screen and
       // `contain` fits the whole photo inside it, so nothing is ever cropped out of the preview.
-      capturedImg.src = dataURL;
-      $('resultPhoto').src = dataURL;
+      capturedImg.src = url;
+      $('resultPhoto').src = url;
     }
 
     /* ── Backend ── */
@@ -1241,9 +1256,9 @@
 
     /* ── Stage 2: take the keeper photo → results ── */
     async function takePhoto() {
-      const dataURL = await grabKeeperDataURL();
-      if (!dataURL) { toast(tr('toast.notReady')); return; }
-      loadCaptured(dataURL);
+      const url = await grabKeeperURL();
+      if (!url) { toast(tr('toast.notReady')); return; }
+      loadCaptured(url);
       stopLive();
       renderResults(analysisResult);
       show('results');

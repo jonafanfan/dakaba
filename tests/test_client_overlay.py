@@ -390,6 +390,61 @@ def test_the_camera_is_asked_for_a_matching_aspect():
         )
 
 
+def test_the_camera_is_asked_for_the_whole_sensor():
+    """The saved photo was 1.6MP and the cause was here, not in the canvas.
+
+    The viewfinder is 3:4 and the track is 4:3, so the crop the user frames is the middle 56% of
+    the track's width. At the old 1920x1440 request that left 1080x1440. The crop cannot change
+    without changing what the app shows, so the request is the only lever.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    requests = re.findall(r"width: \{ ideal: (\d+) \}, height: \{ ideal: (\d+) \}", html)
+    assert requests, "no camera resolution constraints found"
+    for w, h in requests:
+        assert int(w) >= 3840, f"asking for only {w}x{h} — a 3:4 crop of that is under 3MP"
+
+
+def test_the_keeper_cap_does_not_bind_the_request():
+    """The cap exists to guard against an absurd sensor, not to set the resolution. If it ever
+    drops below what getUserMedia asks for, it silently becomes the real limit and every photo is
+    downscaled with nothing saying so — which is exactly how this looked from the outside before.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    keeper = re.search(r"async function grabKeeperURL\(\).*?\n    \}", html, re.S)
+    assert keeper, "grabKeeperURL not found"
+    cap = re.search(r"scaledSize\(c\.sw, c\.sh, (\d+)\)", keeper.group(0))
+    assert cap, "the keeper's size cap is no longer where this test looks for it"
+    widest = max(int(w) for w in re.findall(r"width: \{ ideal: (\d+) \}", html))
+    assert int(cap.group(1)) > widest, (
+        f"cap {cap.group(1)} is below the {widest} requested — it is the limit now, not a guard"
+    )
+
+
+def test_the_scanned_frame_is_still_small():
+    """The other half of the same coin, and the one that costs money.
+
+    The keeper wants every pixel; the frame sent to OpenAI wants as few as will do the job. They
+    are separate caps on purpose — raising the scan to match the keeper would multiply the image
+    tokens on every scan for no better placement.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    scan = re.search(r"function grabScanBlob\(\).*?\n    \}", html, re.S)
+    assert scan, "grabScanBlob not found"
+    cap = re.search(r"scaledSize\(c\.sw, c\.sh, (\d+)\)", scan.group(0))
+    assert cap and int(cap.group(1)) <= 1280, (
+        f"the scan frame is being sent at {cap and cap.group(1)}px — that is billed per scan"
+    )
+
+
+def test_the_keeper_is_a_blob_not_a_data_url():
+    """Base64 costs a third more again in memory, and these are several megabytes now."""
+    html = PAGE.read_text(encoding="utf-8")
+    fn = re.search(r"async function grabKeeperURL\(\).*?\n    \}", html, re.S)
+    assert fn, "grabKeeperURL not found"
+    assert "toDataURL" not in fn.group(0), "the keeper is still a base64 data URL"
+    assert "createObjectURL" in fn.group(0)
+
+
 def test_the_home_screen_frame_is_not_the_camera_frame():
     """Both were once called .viewfinder, so the camera rule leaked onto the home screen — its
     corner marks sit outside their box and overflow:hidden clipped them, on a black background."""
