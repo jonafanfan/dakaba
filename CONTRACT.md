@@ -1,8 +1,17 @@
 # `/analyze` Response Contract
 
-**Owner:** AI Engine (@Zuil909) · **Consumers:** `web/index.html` · **Version:** `0.16` (shipped)
+**Owner:** AI Engine (@Zuil909) · **Consumers:** `web/index.html` · **Version:** `0.17` (shipped)
 
 > **Recent changes**
+>
+> - **`0.17` — `placement.y` moves to the bottom of the frame (behavioural).** The band was
+>   `0.62 / 0.667 / 0.70` and is now `0.84 / 0.88 / 0.90`. `y` is where a standing subject's FEET
+>   go, so the old values asked for someone two thirds up the picture with the bottom third left
+>   as bare ground — and a client comparing a tracked ankle against it told anyone standing at a
+>   natural distance to keep walking backwards. Same shape as before: lower when the top of the
+>   frame is busy, higher when there is foreground to stand clear of. The `y` clamp is now a real
+>   guard (`0.80`–`0.94`) rather than dead code. **Consumers drawing a figure up from this point
+>   must grow it** — a body box sized for the old band describes someone from the chest down.
 >
 > - **`0.16` — `placement` and the standing marker are back (breaking; reverses `0.15`).** The
 >   in-frame marker and its live subject tracking return, so `placement` (`{x, y, reason,
@@ -120,7 +129,7 @@ Every field below is always present on a `200`. There are no optional keys.
   "blur_var":       184.3,      // diagnostic — for tuning the blur gate
   "edge_sharpness": 21.47,      // diagnostic — for tuning the blur gate
 
-  "placement":      { "x": 0.667, "y": 0.667,
+  "placement":      { "x": 0.667, "y": 0.88,
                       "reason": "light",
                       "reason_text": "Light falls on your face" },
 
@@ -144,7 +153,7 @@ Every field below is always present on a `200`. There are no optional keys.
 | Field | Type | Notes |
 |---|---|---|
 | `x` | number | **snapped to a rule-of-thirds line: `0.333` or `0.667`** |
-| `y` | number | one of `0.62`, `0.667`, `0.70` — adapts to where saliency mass sits vertically |
+| `y` | number | where the subject's **feet** go: one of `0.84`, `0.88`, `0.90` — adapts to where saliency mass sits vertically. Clamped to `0.80`–`0.94` |
 | `reason` | enum | which signal decided the side — closed set below |
 | `reason_text` | string | short display string for `reason`, ≤ 34 chars, safe to show verbatim |
 
@@ -165,7 +174,7 @@ Computed by [`_compute_placement`](scene_analysis.py#L56-L154), which fuses thre
 visual **balance** (stand opposite the scene's focal mass), background **cleanliness** (prefer the
 side whose body-band is emptier), and **light direction** (stand on the dimmer side so light falls
 on the face) — plus a hard **backlight veto** so the subject is never placed in front of a
-blown-out region. Never raises; falls back to `{0.667, 0.667}`.
+blown-out region. Never raises; falls back to `{0.667, 0.88}`.
 
 > ⚠️ **This is a composition target, not a point to aim the camera at.** `x` is already snapped to
 > a thirds line for the framing that was scanned. Panning the camera until this point reaches

@@ -67,7 +67,7 @@ def test_switching_language_changes_the_live_cues():
     """The cue is the product. This is the end-to-end check that a switch reaches it."""
     out = run(SCAN + """
       tracker.landmarker = {}; streak = CONFIRM_FRAMES;
-      subject.seen = true; subject.x = 0.667; subject.y = 0.667;
+      subject.seen = true; subject.x = 0.667; subject.y = 0.88;
       applyLang('en'); liveLoop(1234);
       const english = cues[cues.length - 1];
       applyLang('zh'); liveLoop(1235);
@@ -142,13 +142,13 @@ def test_every_tr_key_in_the_script_exists_in_the_table():
 # standing on the marker, so the fixture has to put them there before the cue can be read.
 TILT_SCAN = """
   analysisResult = {
-    placement: { x: 0.667, y: 0.667, reason: 'light', reason_text: 'x' },
+    placement: { x: 0.667, y: 0.88, reason: 'light', reason_text: 'x' },
     camera_tilt: { direction: '%s', reason: '%s' },
     composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
   };
   beginCoaching(analysisResult);
   tracker.landmarker = {}; streak = CONFIRM_FRAMES;
-  subject.seen = true; subject.x = 0.667; subject.y = 0.667;
+  subject.seen = true; subject.x = 0.667; subject.y = 0.88;
   liveActive = true; liveLoop(performance.now());
 """
 REASONS = ["backlight", "light", "balance", "clean_background", "default"]
@@ -161,7 +161,7 @@ def test_the_marker_caption_is_translated_from_its_key(reason):
     out = run(f"""
       applyLang('zh');
       analysisResult = {{
-        placement: {{ x: 0.333, y: 0.70, reason: '{reason}', reason_text: 'English fallback' }},
+        placement: {{ x: 0.333, y: 0.88, reason: '{reason}', reason_text: 'English fallback' }},
         camera_tilt: {{ direction: 'ok', reason: '' }},
         composition: {{}}, lighting: {{}}, hashtags: [], filter: 'Vivid',
       }};
@@ -177,7 +177,7 @@ def test_an_unknown_reason_keeps_the_engines_own_wording():
     out = run("""
       applyLang('zh');
       analysisResult = {
-        placement: { x: 0.333, y: 0.70, reason: 'newly_invented', reason_text: 'Something new' },
+        placement: { x: 0.333, y: 0.88, reason: 'newly_invented', reason_text: 'Something new' },
         camera_tilt: { direction: 'ok', reason: '' },
         composition: {}, lighting: {}, hashtags: [], filter: 'Vivid',
       };

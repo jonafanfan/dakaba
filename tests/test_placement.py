@@ -12,8 +12,13 @@ import pytest
 from scene_analysis import PLACEMENT_REASONS, _compute_placement
 from conftest import LEFT_THIRD, RIGHT_THIRD, gray, saliency
 
+# Where a standing subject's feet go, from the top of the frame. Read here rather than restated in
+# every assertion, so moving the band is one edit and no test goes on checking the old one.
+STAND_Y = 0.88
+STAND_Y_VALUES = {0.84, 0.88, 0.90}
+
 FALLBACK = {
-    "x": RIGHT_THIRD, "y": RIGHT_THIRD,
+    "x": RIGHT_THIRD, "y": STAND_Y,
     "reason": "default", "reason_text": PLACEMENT_REASONS["default"],
 }
 
@@ -31,17 +36,16 @@ def test_x_always_snaps_to_a_thirds_line():
 def test_y_only_ever_takes_one_of_three_values(flat_gray):
     """y is not continuous — the three headroom branches are the whole range.
 
-    Asserting the exact set rather than the [0.60, 0.72] band matters: the band assertion is a
-    tautology, because every branch already sits inside it. Which also means the
-    `min(0.72, max(0.60, y))` clamp in _compute_placement is currently unreachable — harmless
-    belt-and-braces, but it protects nothing today and shouldn't be mistaken for live logic.
+    Asserting the exact set rather than the [0.80, 0.94] band matters: a band assertion is a
+    tautology, because every branch already sits inside it. The clamp is a real guard now that
+    the band has moved down — at the old 0.62-0.70 it could never have fired.
     """
     rng = np.random.default_rng(2)
     seen = set()
     for _ in range(40):
         s = saliency(rng.uniform(0, 0.5), (rng.uniform(0, 0.6), 1.0, 0, 1.0))
         seen.add(_compute_placement(flat_gray, s)["y"])
-    assert seen <= {0.62, 0.667, 0.70}, f"unexpected y values: {seen - {0.62, 0.667, 0.70}}"
+    assert seen <= STAND_Y_VALUES, f"unexpected y values: {seen - STAND_Y_VALUES}"
     assert len(seen) > 1, "inputs should have exercised more than one headroom branch"
 
 
@@ -131,14 +135,28 @@ def test_a_small_bright_patch_is_not_a_backlight(flat_saliency):
 
 # ── headroom: y follows where the visual mass sits ──
 
+def test_the_feet_sit_near_the_bottom_of_the_frame(flat_gray):
+    """The band this pins is the whole point of the 0.16 change.
+
+    y is where a standing subject's FEET go, measured from the top. At the old 0.62-0.70 the app
+    asked for a person standing two thirds up the picture with the bottom third left as bare
+    ground — and, since the client compares a tracked ankle against this number, told anyone at a
+    natural distance to keep walking backwards.
+    """
+    assert all(v >= 0.80 for v in STAND_Y_VALUES), (
+        f"the marker is back up in the middle of the frame: {sorted(STAND_Y_VALUES)}"
+    )
+    assert max(STAND_Y_VALUES) <= 0.94, "the footprint would be off the bottom edge"
+
+
 def test_top_heavy_scene_lowers_the_subject(flat_gray):
     top = saliency(0.0, box=(0.0, 0.33, 0.0, 1.0))
-    assert _compute_placement(flat_gray, top)["y"] == 0.70
+    assert _compute_placement(flat_gray, top)["y"] == 0.90
 
 
 def test_bottom_heavy_scene_raises_the_subject(flat_gray):
     bottom = saliency(0.0, box=(0.67, 1.0, 0.0, 1.0))
-    assert _compute_placement(flat_gray, bottom)["y"] == 0.62
+    assert _compute_placement(flat_gray, bottom)["y"] == 0.84
 
 
 # ── degradation: never raise, always return a usable point ──
@@ -170,7 +188,7 @@ def test_mismatched_shapes_do_not_raise():
     """gray and saliency disagreeing on size must degrade, not explode."""
     result = _compute_placement(gray(128)[:50], saliency(0.5))
     assert result["x"] in (LEFT_THIRD, RIGHT_THIRD)
-    assert 0.60 <= result["y"] <= 0.72
+    assert 0.80 <= result["y"] <= 0.94
 
 
 # ── characterisation: how the three signals are actually weighted ──

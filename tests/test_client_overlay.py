@@ -144,11 +144,12 @@ def test_visible_crop_matches_the_screen_aspect():
 # ── caption placement vs the cue pill ────────────────────────────────────────
 
 def test_caption_flips_above_the_marker_when_the_cue_pill_would_cover_it():
-    """placement.y tops out at 0.72. A caption below the cue pill is unreadable, so it flips
-    above the footprint rather than hiding. The reserved height comes from the page."""
+    """placement.y runs 0.84-0.90, i.e. the footprint sits near the bottom edge, so the caption
+    below it is always under the cue pill and always has to flip. The reserved height comes from
+    the page rather than being restated here."""
     out = run_js(function_source("drawStandMarker") + STUB_CTX + """
       const H = 844, rows = [];
-      for (const y of [0.60, 0.667, 0.72]) {
+      for (const y of [0.84, 0.88, 0.90]) {
         called.length = 0;
         drawStandMarker(390, H, ctx, 0.667, y, false, 'Light falls on your face');
         rows.push({ y, capY: called[0].y, footY: y * H });
@@ -165,12 +166,29 @@ def test_caption_flips_above_the_marker_when_the_cue_pill_would_cover_it():
 
 
 def test_a_high_marker_still_captions_below():
-    """Flipping is a last resort — below the footprint reads better, so keep it where it fits."""
+    """Flipping is a last resort — below the footprint reads better, so keep it where it fits.
+
+    Off the engine's band on purpose: nothing produces 0.60 today, but the rule is "below when
+    there is room", not "below when y is small", and a test that only used live values could not
+    tell the two apart.
+    """
     out = run_js(function_source("drawStandMarker") + STUB_CTX + """
       drawStandMarker(390, 844, ctx, 0.667, 0.60, false, 'Cleaner background here');
       console.log(JSON.stringify({ capY: called[0].y, footY: 0.60 * 844 }));
     """)
     assert out["capY"] > out["footY"], "should still sit below when there is room"
+
+
+def test_the_body_box_reaches_the_top_of_a_standing_person():
+    """The dotted figure is drawn UP from the footprint, so it has to grow as the feet drop — at
+    the old 0.6 height a marker at 0.88 described someone from the chest down."""
+    html = PAGE.read_text(encoding="utf-8")
+    box = re.search(r"boxH = ([0-9.]+) \* H", html)
+    assert box, "the body box height is no longer a literal multiple of the frame height"
+    feet, head = 0.88, 0.88 - float(box.group(1))
+    assert 0.08 <= head <= 0.22, (
+        f"a figure standing at {feet} would have its head at {head:.2f} of the frame"
+    )
 
 
 # ── the photo area and the controls are separate regions ─────────────────────

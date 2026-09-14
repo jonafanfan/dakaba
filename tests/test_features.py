@@ -130,7 +130,7 @@ def test_placement_is_included_and_well_formed(tmp_path):
     f = extract_features(write(tmp_path, checkerboard()))
     assert set(f["placement"]) == {"x", "y", "reason", "reason_text"}
     assert f["placement"]["x"] in (round(1 / 3, 3), round(2 / 3, 3))
-    assert 0.60 <= f["placement"]["y"] <= 0.72
+    assert 0.80 <= f["placement"]["y"] <= 0.94
 
 
 # ── invariants every caller relies on ──
