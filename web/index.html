@@ -45,7 +45,7 @@
        under white text, so brightening it for dark mode would drop that pair to ~2.7:1.
        Left as-is it stays 3.3:1, and reads 5.6:1 as text on the dark bg. */
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme="light"]) {
         --bg: #14110D;
         --surface: #201B15;
         --text: #F2ECE1;
@@ -55,6 +55,19 @@
         --card-shadow: 0 2px 14px rgba(0,0,0,0.45);
       }
     }
+    :root[data-theme="dark"] {
+      --bg: #14110D;
+      --surface: #201B15;
+      --text: #F2ECE1;
+      --text2: #A0937E;
+      --accent-tint: #2E2018;
+      --tan-tint: #2A2117;
+      --card-shadow: 0 2px 14px rgba(0,0,0,0.45);
+    }
+    /* color-scheme has to follow the choice too, or the browser keeps painting form controls,
+       scrollbars and the overscroll gutter in the OS theme behind a page in the opposite one. */
+    :root[data-theme="dark"] { color-scheme: dark; }
+    :root[data-theme="light"] { color-scheme: light; }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -91,8 +104,22 @@
     .hud-rec { top: calc(var(--hud-gap) * -1); left: 2px; }
     .hud-time { top: calc((var(--hud-gap) - 4px) * -1); left: 50%; transform: translateX(-50%); }
     .hud-bat { top: calc((var(--hud-gap) + 3px) * -1); right: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-    .hud-bat-bar { width: 26px; height: 9px; border: 1px solid var(--text2); border-radius: 1px; padding: 1px; }
-    .hud-bat-fill { width: 70%; height: 100%; background: var(--text2); }
+    /* The outline is drawn with a shadow rather than a border, so it can be 1px in light and 1.5
+       in dark without changing the icon's size. A 1px light hairline on a near-black ground reads
+       far weaker than the same hairline dark-on-light — not a contrast problem (this measures
+       6.3:1 in dark against 3.1:1 in light) but a perceptual one: the display bleeds a thin bright
+       line outwards until it is barely there, which is why the BAT text beside it still showed and
+       the battery did not. The fill is the more legible half, so it grows to carry more of the
+       shape. */
+    .hud-bat-bar {
+      width: 26px; height: 10px; border-radius: 2px; padding: 2px;
+      box-shadow: inset 0 0 0 1px var(--text2);
+    }
+    .hud-bat-fill { width: 80%; height: 100%; background: var(--text2); border-radius: 1px; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .hud-bat-bar { box-shadow: inset 0 0 0 1.5px var(--text2); }
+    }
+    :root[data-theme="dark"] .hud-bat-bar { box-shadow: inset 0 0 0 1.5px var(--text2); }
     .hud-format { bottom: calc(var(--hud-gap) * -1); right: 2px; }
 
     .title-block { display: flex; flex-direction: column; align-items: center; }
@@ -102,6 +129,19 @@
     /* Language is chosen on the way in, so the switch lives on the home screen only. A copy on
        every screen would put a settings control inside the viewfinder for something nobody
        changes mid-shoot. */
+    .theme-toggle {
+      position: absolute; top: 14px; left: 16px;
+      display: flex; padding: 2px; gap: 2px;
+      border: 1px solid var(--text2); border-radius: 100px;
+    }
+    .theme-opt {
+      display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 24px; padding: 0;
+      border: none; background: none; color: var(--text2); border-radius: 100px;
+    }
+    .theme-opt svg { width: 14px; height: 14px; display: block; }
+    .theme-opt.on { background: var(--accent); color: #fff; }
+
     .lang-toggle {
       position: absolute; top: 14px; right: 16px;
       display: flex; padding: 2px; gap: 2px;
@@ -362,6 +402,19 @@
 
   <!-- ── Home ── -->
   <section id="home" class="screen active">
+    <div class="theme-toggle" id="themeToggle">
+      <button class="theme-opt" data-theme-choice="light" aria-label="Light">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.5" /><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M19.4 4.6l-2.1 2.1M6.7 17.3l-2.1 2.1" />
+        </svg>
+      </button>
+      <button class="theme-opt" data-theme-choice="dark" aria-label="Dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+        </svg>
+      </button>
+    </div>
+
     <div class="lang-toggle" id="langToggle">
       <button class="lang-opt" data-lang="en">EN</button>
       <button class="lang-opt" data-lang="zh">中文</button>
@@ -1431,6 +1484,46 @@
       } catch (err) { toast(errMsg(err)); show('home'); }
       finally { $('camLoading').classList.remove('active'); }
     });
+
+    /* ── Light / dark ──
+       The page followed prefers-color-scheme and offered no way out of it. Auto stays the default
+       — nothing is stamped until someone picks — but a choice sticks, because the phone's setting
+       is about the phone and this is a camera app you might want dark at noon. */
+    const THEMES = ['light', 'dark'];
+    let theme = (() => {
+      try {
+        const saved = localStorage.getItem('daka.theme');
+        if (THEMES.indexOf(saved) !== -1) return saved;
+      } catch (e) { /* storage unavailable — auto for this session */ }
+      return null;                      // null = follow the phone
+    })();
+
+    function applyTheme(next) {
+      if (next && THEMES.indexOf(next) !== -1) {
+        theme = next;
+        try { localStorage.setItem('daka.theme', theme); } catch (e) { /* choice lasts the session */ }
+      }
+      const root = document.documentElement;
+      if (root) {
+        if (theme) root.dataset.theme = theme;
+        else delete root.dataset.theme;
+      }
+      document.querySelectorAll('.theme-opt').forEach(
+        o => o.classList.toggle('on', o.dataset.themeChoice === theme));
+      // The two theme-color metas are media-scoped, so they answer to the OS rather than to this
+      // choice. Once a choice exists they have to be replaced by a single unconditional one, or
+      // the browser chrome stays the colour of the theme the user just left.
+      if (theme) {
+        document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => {
+          m.removeAttribute('media');
+          m.setAttribute('content', theme === 'dark' ? '#14110D' : '#F6F1E9');
+          if (i > 0) m.remove();
+        });
+      }
+    }
+    document.querySelectorAll('.theme-opt').forEach(
+      o => o.addEventListener('click', () => applyTheme(o.dataset.themeChoice)));
+    applyTheme();
 
     /* ── Language switch ── */
     function applyLang(next) {
