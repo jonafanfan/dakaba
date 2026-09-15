@@ -326,7 +326,24 @@ def test_the_controls_bar_animates_its_height():
     assert "transition:" in rule and "height" in rule, "the bar's height change is not animated"
     assert "overflow: hidden" in rule, "an animated height needs its content clipped"
     state = re.search(r"function setCamState\(s\) \{(.*?)\n    \}", html, re.S).group(1)
-    assert "resizeControls()" in state, "nothing re-measures the bar when the state changes"
+    assert "resizeControls(from)" in state, "nothing re-measures the bar when the state changes"
+    # The starting height has to be read before the panels are hidden or shown. Reading it after
+    # only worked while an earlier call had pinned an explicit height, and the window-resize
+    # handler clears that — which iOS fires every time the URL bar slides.
+    measured = state.index("getBoundingClientRect")
+    changed = state.index("$('camIdle').style.display")
+    assert measured < changed, "the bar is measured after the panels have already changed"
+
+
+def test_analysing_does_not_collapse_the_controls_bar():
+    """The bar's contents are hidden behind the loading scrim, so letting it collapse moved the
+    frame out and straight back either side of the network wait — two animations of a live video,
+    for a change nobody can see. It holds position instead, and moves once when coaching starts."""
+    html = PAGE.read_text(encoding="utf-8")
+    state = re.search(r"function setCamState\(s\) \{(.*?)\n    \}", html, re.S).group(1)
+    assert re.search(r"if \(s === 'loading'\)[^\n]*style\.height = from", state), (
+        "analysing no longer pins the bar's height, so the frame will move out and back"
+    )
 
 
 def test_the_level_is_out_of_the_scene_badge_s_way():
@@ -375,6 +392,33 @@ def test_the_frame_is_a_standard_photo_shape():
     rule = re.search(r"\.cam-frame\s*\{([^}]*)\}", html)
     assert rule, "no .cam-frame rule"
     assert "aspect-ratio: 3 / 4" in rule.group(1), "the frame is no longer a standard photo shape"
+
+
+def test_the_results_photo_is_shown_in_the_shape_it_was_taken_in():
+    """The capture is exactly the viewfinder's crop, so it is always the frame's 3:4. A results box
+    of any other shape letterboxes it under object-fit: contain.
+
+    The bars looked intermittent because the box was sized in vh while the frame uses dvh, so the
+    mismatch appeared and vanished as Safari's URL bar slid up and down.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    frame = re.search(r"\.cam-frame\s*\{([^}]*)\}", html).group(1)
+    wrap = re.search(r"\.photo-wrap\s*\{([^}]*)\}", html)
+    assert wrap, "no .photo-wrap rule"
+    wrap = wrap.group(1)
+
+    frame_aspect = re.search(r"aspect-ratio:\s*([\d\s/]+)", frame).group(1).strip()
+    wrap_aspect = re.search(r"aspect-ratio:\s*([\d\s/]+)", wrap)
+    assert wrap_aspect, "the results box has no aspect ratio, so it cannot match the capture"
+    assert wrap_aspect.group(1).strip() == frame_aspect, (
+        f"results box is {wrap_aspect.group(1).strip()}, capture is {frame_aspect} — it will "
+        "letterbox every photo"
+    )
+    assert "dvh" in wrap, "sized in static vh, so the bars come back when the URL bar moves"
+    # contain, not cover: the file-picker path supplies images of any aspect, and cropping a photo
+    # the user chose themselves would be worse than bordering it.
+    photo = re.search(r"#resultPhoto\s*\{([^}]*)\}", html).group(1)
+    assert "object-fit: contain" in photo
 
 
 def test_the_camera_is_asked_for_a_matching_aspect():

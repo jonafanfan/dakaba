@@ -345,7 +345,18 @@
        is taller than any box that would also leave room for the buttons, so something has to
        give. Letterboxing shows the entire photo; cropping to fill would hide part of the
        framing the user was just coached into. */
-    .photo-wrap { position: relative; width: 100%; height: 67vh; background: #000; flex-shrink: 0; }
+    /* The capture is exactly the viewfinder's crop, so it is always 3:4 (see .cam-frame). A box
+       of a different shape letterboxes it under object-fit: contain — and because this used vh
+       while the frame uses dvh, the mismatch came and went as Safari's URL bar slid, which is why
+       the black bars looked intermittent. Same shape as the frame, same units, no bars.
+       contain STAYS: the file-picker path can hand us an image of any aspect, and cropping
+       someone's chosen photo to fit would be worse than bordering it. */
+    .photo-wrap {
+      position: relative; margin: 0 auto; background: #000; flex-shrink: 0;
+      width: min(100%, calc(67vh * 0.75));
+      width: min(100%, calc(67dvh * 0.75));
+      aspect-ratio: 3 / 4;
+    }
     #resultPhoto { width: 100%; height: 100%; object-fit: contain; display: block; }
     .scene-badge { position: absolute; bottom: 14px; left: 14px; background: rgba(0,0,0,0.45); color: #fff; padding: 6px 16px; border-radius: 100px; font-size: 14px; font-weight: 600; }
     /* One horizontal row, deliberately. A grid of eight swatches is a lot of decision for
@@ -937,13 +948,15 @@
     // Height is measured, not listed: the placement hint wraps to two lines often enough that any
     // fixed number per state would be wrong a good share of the time, and a wrong number clips the
     // shutter. Reading the natural height and animating to it is correct whatever is in there.
-    function resizeControls() {
+    function resizeControls(from) {
       const el = $('camControls');
-      const from = el.getBoundingClientRect().height;
       el.style.height = 'auto';
       const to = el.getBoundingClientRect().height;
       if (!to) { el.style.height = ''; return; }      // not laid out yet — leave it alone
-      el.style.height = (from || to) + 'px';
+      // Nothing to animate: the bar is appearing for the first time, or it is already the right
+      // height. Setting both ends to the same value would start a transition that never paints.
+      if (!from || Math.abs(to - from) < 1) { el.style.height = to + 'px'; return; }
+      el.style.height = from + 'px';
       void el.offsetHeight;                            // flush the start value, or there is no
       el.style.height = to + 'px';                     // transition to animate from
     }
@@ -952,6 +965,12 @@
     window.addEventListener('resize', () => { $('camControls').style.height = ''; });
 
     function setCamState(s) {
+      // Measured BEFORE the panels change, because this is the height we are animating FROM.
+      // Reading it afterwards only ever worked because an earlier call had pinned an explicit
+      // height — and the window-resize handler below clears that, which iOS triggers every time
+      // the URL bar slides. When it had been cleared, `from` came back equal to `to` and the
+      // move happened in one frame.
+      const from = $('camControls').getBoundingClientRect().height;
       $('camIdle').style.display     = s === 'idle' ? 'flex' : 'none';
       $('camLoading').classList.toggle('active', s === 'loading');
       const tips = s === 'tips';
@@ -962,7 +981,14 @@
       updateLensVisibility();
       if (s !== 'tips') resetCoaching();
       // Last: resetCoaching clears the placement hint, which is part of what is being measured.
-      resizeControls();
+      //
+      // Analysing holds the bar exactly where it is instead of measuring. Its contents are hidden
+      // behind the scrim, so letting it collapse moved the frame out and straight back for no
+      // reason the user could see — two animations of a live video either side of a network wait,
+      // which is where the stutter and the black flash came from. One move now, when coaching
+      // starts.
+      if (s === 'loading') { if (from) $('camControls').style.height = from + 'px'; }
+      else resizeControls(from);
     }
 
     async function startCamera() {
