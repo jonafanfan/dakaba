@@ -154,7 +154,7 @@ preview can load the UI but not scan. To scan from a preview you'd need to add i
 .venv/Scripts/python -m pytest        # or bare `pytest`
 ```
 
-**342 tests, ~3 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
+**374 tests, ~4 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
 the fixture makes constructing a real one a test failure.
 
 The three `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
@@ -164,15 +164,16 @@ both were out-of-scope identifiers that only failed when the code actually ran.
 | File | Tests | Covers |
 |---|---|---|
 | [`test_openai_paths.py`](tests/test_openai_paths.py) | 89 | moderation, every degradation path, request shapes, `_encode_image`, the `lang` prompt |
-| [`test_client_loop.py`](tests/test_client_loop.py) | 44 | **the render loop, the marker, the cue ladder and the horizon level's gravity maths, run for real in node** |
+| [`test_client_loop.py`](tests/test_client_loop.py) | 55 | **the render loop, the marker, the cue ladder, the camera lifecycle and the horizon level's gravity maths, run for real in node** |
 | [`test_guidance.py`](tests/test_guidance.py) | 42 | placement reason, dead-space tilt, the model's depth hint, the client/engine filter agreement |
 | [`test_assessments.py`](tests/test_assessments.py) | 40 | lighting, composition, blueprint — thresholds at their boundaries |
 | [`test_api.py`](tests/test_api.py) | 31 | endpoint guards: size cap, rate limit, error mapping, CORS, `lang` |
-| [`test_client_i18n.py`](tests/test_client_i18n.py) | 25 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the marker caption and tilt cue keys |
-| [`test_placement.py`](tests/test_placement.py) | 22 | every directional claim in `_compute_placement`, including the backlight veto |
-| [`test_client_overlay.py`](tests/test_client_overlay.py) | 21 | marker drawing, `visibleCrop` maths and the camera-region layout invariants |
-| [`test_filters.py`](tests/test_filters.py) | 14 | pixel-baked filters match the CSS preview exactly |
+| [`test_client_overlay.py`](tests/test_client_overlay.py) | 26 | marker drawing, `visibleCrop` maths and the camera-region layout invariants |
+| [`test_client_i18n.py`](tests/test_client_i18n.py) | 26 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the marker caption and tilt cue keys |
+| [`test_placement.py`](tests/test_placement.py) | 23 | every directional claim in `_compute_placement`, including the backlight veto |
+| [`test_filters.py`](tests/test_filters.py) | 16 | pixel-baked filters match the CSS preview exactly |
 | [`test_features.py`](tests/test_features.py) | 14 | `extract_features` on synthetic scenes, all three blur regimes |
+| [`test_client_theme.py`](tests/test_client_theme.py) | 12 | the light/dark choice and what it does and does not repaint |
 
 CI runs the suite on every PR to `main` ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)).
 Test-only dependencies live in `requirements-dev.txt` so Render's build stays lean.
