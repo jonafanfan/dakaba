@@ -414,7 +414,12 @@ def test_the_results_photo_is_shown_in_the_shape_it_was_taken_in():
         f"results box is {wrap_aspect.group(1).strip()}, capture is {frame_aspect} — it will "
         "letterbox every photo"
     )
-    assert "dvh" in wrap, "sized in static vh, so the bars come back when the URL bar moves"
+    assert re.search(r"width:\s*100%", wrap), "the photo no longer spans the screen"
+    # Stronger than matching the frame's units: with the shape fixed by the ratio and the width
+    # by the screen, there is no viewport-height term left for the URL bar to move.
+    assert not re.search(r"\d\s*(?:d|l|s)?vh", wrap), (
+        "sized against viewport height again — the bars return whenever the URL bar slides"
+    )
     # contain, not cover: the file-picker path supplies images of any aspect, and cropping a photo
     # the user chose themselves would be worse than bordering it.
     photo = re.search(r"#resultPhoto\s*\{([^}]*)\}", html).group(1)
