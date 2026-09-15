@@ -795,6 +795,9 @@ SAVE_STUB = """
   });
   document.body = { appendChild(){} };
   toast = (m) => toasts.push(m);
+  // Share writes the hashtags here instead of attaching them to the photo.
+  const copied = [];
+  navigator.clipboard = { writeText: (t) => { copied.push(t); return Promise.resolve(); } };
 """
 
 WITH_SHEET = """
@@ -809,12 +812,13 @@ NO_SHEET = """
 """
 
 
-def test_save_attaches_the_file_alone_and_share_attaches_the_hashtags():
-    """The two buttons both open the system sheet on a phone, because no web page can write to the
-    camera roll on either mobile OS — the sheet's "Save Image" is the only route there.
+def test_neither_button_attaches_text_to_the_photo():
+    """Both buttons open the system sheet on a phone, because no web page can write to the camera
+    roll on either mobile OS — the sheet's "Save Image" is the only route there.
 
-    What separates them is the payload. A file on its own puts saving first; adding text turns it
-    into a post. Getting this backwards is what made Save look like a broken copy of Share.
+    Neither sends text with the file. Attaching `text` as well makes iOS treat the words as the
+    item being shared: the sheet shows a generic file placeholder instead of the picture, and some
+    targets take the text and drop the image. Sharing a photo should look like sharing a photo.
     """
     out = run(SAVE_STUB + WITH_SHEET + """
       savePhoto()
@@ -825,7 +829,32 @@ def test_save_attaches_the_file_alone_and_share_attaches_the_hashtags():
         })));
     """)
     assert out["save"]["files"] == 1 and out["save"]["text"] is None, "Save should attach no text"
-    assert out["share"]["text"] == "#a #b", "Share should carry the hashtags"
+    assert out["share"]["files"] == 1, "Share should attach the photo"
+    assert out["share"]["text"] is None, (
+        "Share attached text again — the sheet will fall back to a file placeholder"
+    )
+
+
+def test_share_puts_the_hashtags_on_the_clipboard_instead():
+    """They are not dropped, just moved off the share payload: one paste into the caption field
+    wherever the photo lands. Written before share() is awaited, because the clipboard needs the
+    user gesture that is still live at that point — spending it on the sheet first loses it."""
+    out = run(SAVE_STUB + WITH_SHEET + """
+      sharePhoto().then(() => console.log(JSON.stringify({ copied, toasts })));
+    """)
+    assert out["copied"] == ["#a #b"], f"hashtags were not copied: {out['copied']}"
+    assert out["toasts"] == ["Hashtags copied — paste them into the caption"], (
+        f"nothing told the user where the hashtags went: {out['toasts']}"
+    )
+
+
+def test_save_does_not_touch_the_clipboard():
+    """Save is for keeping, not posting. Overwriting the clipboard of someone who only wanted the
+    photo is a side effect they did not ask for."""
+    out = run(SAVE_STUB + WITH_SHEET + """
+      savePhoto().then(() => console.log(JSON.stringify({ copied })));
+    """)
+    assert out["copied"] == [], f"Save clobbered the clipboard with {out['copied']}"
 
 
 def test_save_falls_back_to_a_real_download_without_a_share_sheet():
@@ -848,10 +877,19 @@ def test_it_does_not_claim_to_have_saved_when_it_handed_off_to_the_sheet():
 
 
 def test_the_saved_file_is_named_per_shot():
-    """A camera roll of daka.jpg, daka(1).jpg is nobody's idea of a keeper."""
-    out = run("console.log(JSON.stringify({ a: filename(), b: filename() }));")
-    assert out["a"].startswith("dakaba-") and out["a"].endswith(".jpg")
-    assert out["a"] != "daka.jpg"
+    """A folder of daka.jpg, daka(1).jpg is nobody's idea of a keeper — but a run-together
+    timestamp reads as a serial number, so it is spaced and punctuated like a screenshot while
+    still sorting chronologically.
+
+    Only Files and desktop downloads ever see this: saving through the sheet to Photos hands the
+    name to iOS, which discards it.
+    """
+    out = run("console.log(JSON.stringify({ a: filename() }));")
+    name = out["a"]
+    assert re.fullmatch(r"DaKaBa \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}\.jpg", name), name
+    # A colon is illegal in a filename on every platform that matters, and the OS would silently
+    # rewrite it — so the time is separated by dots.
+    assert ":" not in name
 
 
 def test_retake_does_nothing_without_an_analysis():
