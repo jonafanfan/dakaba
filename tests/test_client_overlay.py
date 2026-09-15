@@ -335,6 +335,28 @@ def test_the_controls_bar_animates_its_height():
     assert measured < changed, "the bar is measured after the panels have already changed"
 
 
+def test_the_controls_bar_is_not_left_pinned_at_rest():
+    """The bar clips its content (overflow: hidden), so a height left pinned after the move cuts
+    off anything that appears later — and things do appear later: detectLenses awaits
+    enumerateDevices, so the 1x/0.5x toggle arrives well after the bar has been measured, and it
+    took the shutter hint under it out of view too.
+
+    A pinned height is a means of animating one, never a resting state.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    fn = re.search(r"function resizeControls\(from\) \{(.*?)\n    \}", html, re.S).group(1)
+    # The no-animation path must leave the bar free rather than pinning the value it already has.
+    assert re.search(r"Math\.abs\(to - from\) < 1\) \{ el\.style\.height = ''", fn), (
+        "the no-animation path pins a height, which will clip a late-arriving control"
+    )
+    # The animated path pins, so it must schedule a release.
+    assert "releaseBar(el)" in fn, "an animated move pins the height and never releases it"
+    rel = re.search(r"function releaseBar\(el\) \{(.*?)\n    \}", html, re.S).group(1)
+    assert "el.style.height = ''" in rel, "the release does not actually free the height"
+    # transitionend would never fire under reduced motion, where there is no transition at all.
+    assert "setTimeout" in rel, "the release depends on an event that reduced motion suppresses"
+
+
 def test_analysing_does_not_collapse_the_controls_bar():
     """The bar's contents are hidden behind the loading scrim, so letting it collapse moved the
     frame out and straight back either side of the network wait — two animations of a live video,

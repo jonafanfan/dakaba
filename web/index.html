@@ -947,17 +947,31 @@
     // Height is measured, not listed: the placement hint wraps to two lines often enough that any
     // fixed number per state would be wrong a good share of the time, and a wrong number clips the
     // shutter. Reading the natural height and animating to it is correct whatever is in there.
+    // A pinned height is only ever a means of animating one. Left in place it combines with
+    // overflow:hidden to clip anything that appears afterwards — and things do appear afterwards:
+    // detectLenses awaits enumerateDevices, so the 1x/0.5x toggle arrives long after the bar has
+    // been measured, and it took the hint underneath it out of view too.
+    let barRelease = null;
+    function releaseBar(el) {
+      clearTimeout(barRelease);
+      // Comfortably past the 340ms transition. transitionend alone is not enough: reduced-motion
+      // removes the transition entirely, so the event would never fire and the pin would stay.
+      barRelease = setTimeout(() => { el.style.height = ''; }, 420);
+    }
+
     function resizeControls(from) {
       const el = $('camControls');
+      clearTimeout(barRelease);
       el.style.height = 'auto';
       const to = el.getBoundingClientRect().height;
       if (!to) { el.style.height = ''; return; }      // not laid out yet — leave it alone
       // Nothing to animate: the bar is appearing for the first time, or it is already the right
-      // height. Setting both ends to the same value would start a transition that never paints.
-      if (!from || Math.abs(to - from) < 1) { el.style.height = to + 'px'; return; }
+      // height. Leave it free rather than pinning a value it already has.
+      if (!from || Math.abs(to - from) < 1) { el.style.height = ''; return; }
       el.style.height = from + 'px';
       void el.offsetHeight;                            // flush the start value, or there is no
       el.style.height = to + 'px';                     // transition to animate from
+      releaseBar(el);
     }
     // An explicit pixel height goes stale when the screen changes shape. Clearing it returns the
     // bar to its natural height immediately; the next state change measures again.
@@ -1006,7 +1020,8 @@
       // reason the user could see — two animations of a live video either side of a network wait,
       // which is where the stutter and the black flash came from. One move now, when coaching
       // starts.
-      if (s === 'loading') { if (from) $('camControls').style.height = from + 'px'; }
+      // Analysing holds its pin for as long as the scan takes, so any pending release is cancelled.
+      if (s === 'loading') { clearTimeout(barRelease); if (from) $('camControls').style.height = from + 'px'; }
       else resizeControls(from);
       // After the bar, so the natural position this measures is the one the frame is settling to.
       placeFrame(s === 'loading');
