@@ -972,8 +972,14 @@
         $('video').srcObject = stream;
         $('videoBackdrop').srcObject = stream;   // same stream, so they can never disagree
         hasCamera = true;
-        setCamState('idle');
+        // show() BEFORE setCamState, not after. setCamState ends in resizeControls, which
+        // measures the controls bar to animate its height — and a measurement taken while the
+        // camera screen is still display:none comes back 0, so resizeControls bails and leaves
+        // the bar at `auto`. With no pinned starting height the first state change afterwards has
+        // nothing to animate FROM, which is why the frame only began gliding from the second scan
+        // onwards: by then an earlier call had pinned a real number.
         show('camera');
+        setCamState('idle');
         detectLenses();
         loadTracker();          // in the background, so it is ready by the time they scan
         startLive();
@@ -982,6 +988,29 @@
         toast(tr('toast.noCam'));
         $('fileInput').click();
       }
+    }
+
+    // Coming back to the viewfinder from the results screen. The stream is never detached, but
+    // that is not enough on its own: a <video> inside a display:none screen is suspended, and
+    // autoplay does not re-fire when it is shown again — the element stays paused, videoWidth
+    // stays 0, and liveLoop returns on its first line every frame. The viewfinder simply never
+    // starts, with nothing logged.
+    //
+    // The "sometimes" is the second half: if the page loses visibility while the camera screen is
+    // hidden, iOS releases the camera track outright. readyState goes to "ended" and it never
+    // recovers by itself, so playing the element again achieves nothing and the only fix is to
+    // ask for the camera a second time.
+    async function resumeCamera() {
+      const live = !!stream && stream.getVideoTracks().some(t => t.readyState === 'live');
+      if (!live) { await startCamera(); return 'reacquired'; }
+      for (const id of ['video', 'videoBackdrop']) {
+        const v = $(id);
+        if (v.srcObject !== stream) v.srcObject = stream;
+        // play() rejects if the element is not ready yet. There is nothing useful to do about
+        // that here, but an unhandled rejection surfaces as a page error, so it is swallowed.
+        try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not ready */ }
+      }
+      return 'resumed';
     }
 
     /* ── 1×/0.5× ultra-wide lens (feature-detected) ── */
@@ -1328,9 +1357,12 @@
 
     // Another shot of the same setup. The scene has not changed, so re-analysing it would cost a
     // wait and two OpenAI calls to place the marker in exactly the same spot.
-    function retake() {
+    async function retake() {
       if (!analysisResult) return;
       show('camera');
+      // Before startLive, not after: a suspended element reports videoWidth 0 and every frame of
+      // the loop would return early until it happened to resume on its own.
+      if (await resumeCamera() === 'reacquired' && !hasCamera) return;   // camera is gone for good
       startLive();
       beginCoaching(analysisResult);
     }
@@ -1584,7 +1616,13 @@
     $('shareBtn').addEventListener('click', sharePhoto);
     $('saveBtn').addEventListener('click', savePhoto);
     $('retakeBtn').addEventListener('click', retake);
-    $('scanAgain').addEventListener('click', () => { if (hasCamera) { setCamState('idle'); show('camera'); startLive(); } else { stopLive(); show('home'); } });
+    $('scanAgain').addEventListener('click', async () => {
+      if (!hasCamera) { stopLive(); show('home'); return; }
+      show('camera');                       // before setCamState, so the bar can be measured
+      if (await resumeCamera() === 'reacquired' && !hasCamera) { show('home'); return; }
+      setCamState('idle');
+      startLive();
+    });
     $('gateScanAgain').addEventListener('click', closeGate);
 
     /* ── Level slider: horizon roll from the gravity vector (pitch-independent) ── */

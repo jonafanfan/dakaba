@@ -29,6 +29,10 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node
 # thrown error rather than a silent pass, which is the point.
 DOM_STUB = r"""
 const drawn = [];      // every marker / caption the overlay draws
+const played = [];     // every play() call, by element id — a suspended <video> needs one
+// styles and toggles are separate arrays, so an index into one says nothing about the other.
+// A shared counter stamped on both is what makes "did A happen before B" answerable.
+let seq = 0;
 const cues = [];      // every #coachText assignment, in order
 const hints = [];     // every #placeHint assignment, in order
 const styles = [];    // every style property assignment, tagged with the element id
@@ -37,15 +41,15 @@ function el(id) {
   return {
     id,
     style: new Proxy({}, {
-      set: (t, k, val) => { t[k] = val; styles.push({ id, prop: k, val }); return true; },
+      set: (t, k, val) => { t[k] = val; styles.push({ id, prop: k, val, seq: seq++ }); return true; },
       get: (t, k) => t[k] || '',
     }),
     classList: {
       // add/remove are recorded as toggles too, so a test can read the resulting state whichever
       // call the page happened to use to get there.
-      add(...cs){ cs.forEach(cls => toggles.push({ id, cls, val: true })); },
-      remove(...cs){ cs.forEach(cls => toggles.push({ id, cls, val: false })); },
-      toggle(cls, val){ toggles.push({ id, cls, val }); },
+      add(...cs){ cs.forEach(cls => toggles.push({ id, cls, val: true, seq: seq++ })); },
+      remove(...cs){ cs.forEach(cls => toggles.push({ id, cls, val: false, seq: seq++ })); },
+      toggle(cls, val){ toggles.push({ id, cls, val, seq: seq++ }); },
       contains(){ return false; },
     },
     addEventListener(){}, removeEventListener(){}, click(){},
@@ -72,7 +76,7 @@ function el(id) {
       };
     },
     toBlob(cb){ cb({}); }, toDataURL(){ return 'data:image/jpeg;base64,x'; },
-    play(){ return Promise.resolve(); },
+    play(){ played.push(id); return Promise.resolve(); },
   };
 }
 const document = {
@@ -712,13 +716,21 @@ ANALYSIS = """
   };
 """
 
+# Retake is only reachable from the results screen, which is only reachable after the camera has
+# started — so the state it actually runs against has a live track. Without this the page is right
+# to try to re-acquire the camera, and these tests would be measuring the no-camera path instead.
+LIVE_STREAM = """
+  hasCamera = true;
+  stream = { getVideoTracks: () => [{ readyState: 'live' }] };
+"""
+
 
 def test_retake_restores_the_coaching_state():
     """The whole point: the scene has not changed, so the same marker should come straight back."""
-    out = run(ANALYSIS + """
+    out = run(ANALYSIS + LIVE_STREAM + """
       motionGranted = true;
       resetCoaching();                 // as stopLive() does on the way to the results screen
-      retake();
+      await retake();
       console.log(JSON.stringify({
         coachingActive, standPos, standReason, tiltDirection, tiltFallback,
         needsStraightening, hints,
@@ -738,11 +750,11 @@ def test_retake_restores_the_coaching_state():
 def test_retake_costs_no_api_call():
     """The reason it exists. Re-scanning an unchanged scene costs a wait and two OpenAI calls to
     put the marker in exactly the same place."""
-    out = run(ANALYSIS + """
+    out = run(ANALYSIS + LIVE_STREAM + """
       let fetches = 0;
       globalThis.fetch = () => { fetches++; return Promise.reject(new Error('x')); };
       resetCoaching();
-      retake();
+      await retake();
       console.log(JSON.stringify({ fetches }));
     """)
     assert out["fetches"] == 0, "retake must not re-analyse the scene"
@@ -829,21 +841,80 @@ def test_retake_does_nothing_without_an_analysis():
     restored session should not put the app into coaching with no marker to show."""
     out = run("""
       analysisResult = null;
-      retake();
+      await retake();
       console.log(JSON.stringify({ coachingActive, standPos }));
     """)
     assert out["coachingActive"] is False
     assert out["standPos"] is None
 
 
+def test_retake_restarts_a_suspended_video_element():
+    """A <video> inside a display:none screen is suspended, and autoplay does not re-fire when the
+    screen comes back. Nothing detaches the stream, so this looked like it should work — but the
+    element stays paused, videoWidth stays 0, and liveLoop returns on its first line every frame.
+    The viewfinder never starts and nothing is logged."""
+    out = run(ANALYSIS + LIVE_STREAM + """
+      await retake();
+      console.log(JSON.stringify({ played, coachingActive }));
+    """)
+    assert "video" in out["played"], "the viewfinder was never told to play"
+    assert "videoBackdrop" in out["played"], "the blurred surround was left frozen"
+    assert out["coachingActive"] is True
+
+
+def test_retake_reacquires_a_camera_ios_released():
+    """The "sometimes". If the page loses visibility while the camera screen is hidden, iOS ends
+    the track outright — readyState "ended", never recovering on its own. Playing the element
+    again achieves nothing; the only fix is asking for the camera a second time."""
+    out = run(ANALYSIS + """
+      hasCamera = true;
+      stream = { getVideoTracks: () => [{ readyState: 'ended' }] };
+      let asked = 0;
+      navigator.mediaDevices.getUserMedia = () => {
+        asked++;
+        return Promise.resolve({ getVideoTracks: () => [{ readyState: 'live' }] });
+      };
+      await retake();
+      console.log(JSON.stringify({ asked, coachingActive }));
+    """)
+    assert out["asked"] == 1, "an ended track must be re-acquired, not replayed"
+    assert out["coachingActive"] is True, "coaching should resume on the new stream"
+
+
+def test_the_camera_screen_is_shown_before_the_controls_are_measured():
+    """setCamState ends in resizeControls, which measures the controls bar to animate its height.
+    A measurement taken while the screen is still display:none comes back 0, resizeControls bails,
+    and the bar keeps `height: auto` — so the first state change afterwards has no pinned height to
+    animate FROM. That is why the frame only started gliding from the second scan onwards.
+
+    Ordering is the whole fix, so ordering is what this pins."""
+    out = run("""
+      navigator.mediaDevices.getUserMedia = () =>
+        Promise.resolve({ getVideoTracks: () => [{ readyState: 'live' }] });
+      // The page writes to both recorders as it loads; only this call's ordering is in question.
+      toggles.length = 0; styles.length = 0;
+      await startCamera();
+      const shown = (toggles.find(t => t.id === 'camera' && t.cls === 'active' && t.val) || {}).seq;
+      const measured = (styles.find(s => s.id === 'camIdle' && s.prop === 'display') || {}).seq;
+      console.log(JSON.stringify({ shown, measured }));
+    """)
+    assert out["shown"] is not None and out["measured"] is not None, (
+        "startCamera did not reach either step"
+    )
+    assert out["shown"] < out["measured"], (
+        "setCamState ran while the camera screen was still hidden, so the controls bar was "
+        "measured at zero height and the first transition cannot animate"
+    )
+
+
 def test_a_scan_and_a_retake_produce_the_same_coaching_state():
     """Both go through beginCoaching, so they cannot drift apart. This is why it was extracted."""
-    out = run(ANALYSIS + """
+    out = run(ANALYSIS + LIVE_STREAM + """
       motionGranted = true;
       beginCoaching(analysisResult);
       const afterScan = { standPos: { ...standPos }, standReason, tiltDirection, tiltFallback, needsStraightening, hint: hints[hints.length - 1] };
       resetCoaching();
-      retake();
+      await retake();
       const afterRetake = { standPos: { ...standPos }, standReason, tiltDirection, tiltFallback, needsStraightening, hint: hints[hints.length - 1] };
       console.log(JSON.stringify({ afterScan, afterRetake }));
     """)
