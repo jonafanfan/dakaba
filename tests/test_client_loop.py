@@ -33,6 +33,7 @@ const played = [];     // every play() call, by element id — a suspended <vide
 // styles and toggles are separate arrays, so an index into one says nothing about the other.
 // A shared counter stamped on both is what makes "did A happen before B" answerable.
 let seq = 0;
+let frameTranslate = 0;   // px the frame is currently transformed by, reflected in its rect
 const cues = [];      // every #coachText assignment, in order
 const hints = [];     // every #placeHint assignment, in order
 const styles = [];    // every style property assignment, tagged with the element id
@@ -41,7 +42,16 @@ function el(id) {
   return {
     id,
     style: new Proxy({}, {
-      set: (t, k, val) => { t[k] = val; styles.push({ id, prop: k, val, seq: seq++ }); return true; },
+      set: (t, k, val) => {
+        t[k] = val; styles.push({ id, prop: k, val, seq: seq++ });
+        // A real transform moves the element's rect. Modelling that is what lets a test see the
+        // frame drift when placeFrame forgets how far it has already been pushed.
+        if (id === 'camFrame' && k === 'transform') {
+          const m = /translateY\((-?[\d.]+)px\)/.exec(val || '');
+          frameTranslate = m ? parseFloat(m[1]) : 0;
+        }
+        return true;
+      },
       get: (t, k) => t[k] || '',
     }),
     classList: {
@@ -61,8 +71,16 @@ function el(id) {
     get textContent() { return ''; },
     innerHTML: '', value: '', files: [],
     clientWidth: 390, clientHeight: 844, width: 390, height: 844,
-    // Real enough for the controls bar, which measures itself to animate its own height.
-    getBoundingClientRect() { return { width: 390, height: 140, top: 0, left: 0, right: 390, bottom: 140 }; },
+    // Real enough for the two things that measure themselves: the controls bar, which animates
+    // its own height, and the frame, which is placed against the height of the screen. A single
+    // rect for every element made the frame's natural position equal to the centred one, so any
+    // assertion about where it travels to would have passed on arithmetic that never ran.
+    getBoundingClientRect() {
+      if (id === 'camera')   return { width: 390, height: 844, top: 0, left: 0, right: 390, bottom: 844 };
+      // 3:4 at full width, sitting below the status area — the top-middle resting position.
+      if (id === 'camFrame') return { width: 390, height: 520, top: 80 + frameTranslate, left: 0, right: 390, bottom: 600 + frameTranslate };
+      return { width: 390, height: 140, top: 0, left: 0, right: 390, bottom: 140 };
+    },
     offsetHeight: 140,
     videoWidth: 1080, videoHeight: 1920, srcObject: null,
     getContext() {
@@ -905,6 +923,62 @@ def test_the_camera_screen_is_shown_before_the_controls_are_measured():
         "setCamState ran while the camera screen was still hidden, so the controls bar was "
         "measured at zero height and the first transition cannot animate"
     )
+
+
+def frame_transforms(states):
+    """The transform written to the frame after each of the given camera states, in order."""
+    steps = "".join(
+        f"setCamState('{s}'); out.push(styles.filter(x => x.id === 'camFrame' "
+        "&& x.prop === 'transform').pop()); "
+        for s in states
+    )
+    out = run("const out = [];" + steps + """
+      console.log(JSON.stringify({ t: out.map(s => (s && s.val) || '') }));
+    """)
+    return out["t"]
+
+
+def test_the_frame_travels_to_the_centre_while_analysing():
+    """Top-middle to compose, centre of the screen while the scan is in flight, top-middle again to
+    coach. With a 520px frame in an 844px screen resting at top 80, centred means top 162 — a shift
+    of 82."""
+    idle, loading, tips = frame_transforms(["idle", "loading", "tips"])
+    assert idle == "", "the composing state should sit where layout puts it"
+    assert re.fullmatch(r"translateY\(82px\)", loading), (
+        f"analysing did not centre the frame: {loading!r}"
+    )
+    assert tips == "", f"coaching should return to the top-middle position: {tips!r}"
+
+
+def test_the_frame_does_not_drift_across_repeated_transitions():
+    """placeFrame measures where the frame is now, which already includes however far it has been
+    pushed. Subtracting the current shift is what recovers the natural position — without it a
+    second centring measures from the centred position, decides it is already there, and drops the
+    frame back to the top mid-analysis.
+
+    Found by mutation testing: the straight idle/loading/tips path cannot see this, because the
+    shift is only non-zero on the one step that sets it.
+    """
+    t = frame_transforms(["idle", "loading", "loading", "tips", "loading"])
+    assert t[1] == "translateY(82px)", f"first centring: {t[1]!r}"
+    assert t[2] == "translateY(82px)", (
+        f"the frame moved on a second centring instead of staying put: {t[2]!r}"
+    )
+    assert t[3] == "", f"coaching should return to the top: {t[3]!r}"
+    assert t[4] == "translateY(82px)", f"centring after a round trip drifted: {t[4]!r}"
+
+
+def test_the_frame_moves_by_transform_not_by_layout():
+    """A live <video> re-rasterises when its box changes, which is what made the earlier
+    height-driven move stutter and flash black. Transform is composited and touches nothing
+    inside the frame, so it must stay the mechanism."""
+    html = PAGE.read_text(encoding="utf-8")
+    rule = re.search(r"\.cam-frame\s*\{([^}]*)\}", html).group(1)
+    assert re.search(r"transition:[^;]*transform", rule), "the frame's travel is not animated"
+    for banned in ("transition: top", "transition: margin"):
+        assert banned not in rule, f"{banned} moves the frame by relayout"
+    placed = re.search(r"function placeFrame\(centred\) \{(.*?)\n    \}", html, re.S).group(1)
+    assert "translateY" in placed, "placeFrame no longer moves the frame by transform"
 
 
 def test_a_scan_and_a_retake_produce_the_same_coaching_state():

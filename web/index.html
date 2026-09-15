@@ -199,7 +199,14 @@
       width: min(100%, calc(72vh * 0.75));
       width: min(100%, calc(72dvh * 0.75));
       aspect-ratio: 3 / 4;
+
+      /* The frame travels: top-middle to compose, centre of the screen while the scan is in
+         flight, top-middle again to coach. It moves by TRANSFORM, not by layout — a live <video>
+         re-rasterises when its box changes, which is what made the earlier height-driven move
+         stutter and flash black. A transform is composited and touches nothing inside. */
+      transition: transform 340ms cubic-bezier(0.4, 0, 0.2, 1);
     }
+    @media (prefers-reduced-motion: reduce) { .cam-frame { transition: none; } }
     .cam-controls {
       flex: 0 1 auto; position: relative; z-index: 2;
 
@@ -337,24 +344,16 @@
     /* ─── Results ─── */
     #results { background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .results-inner { min-height: 100%; display: flex; flex-direction: column; }
-    /* Aspect is set from the captured image at runtime. It used to be pinned to 3:4 while the
-       keeper is the phone's own shape, so `cover` cropped the top and bottom off the very
-       framing the user had just been coached into. */
-    /* Two thirds of the viewport, with `contain` so the whole frame is visible inside it.
-       A fixed height rather than an aspect ratio: the keeper is the phone's own shape, which
-       is taller than any box that would also leave room for the buttons, so something has to
-       give. Letterboxing shows the entire photo; cropping to fill would hide part of the
-       framing the user was just coached into. */
-    /* The capture is exactly the viewfinder's crop, so it is always 3:4 (see .cam-frame). A box
-       of a different shape letterboxes it under object-fit: contain — and because this used vh
-       while the frame uses dvh, the mismatch came and went as Safari's URL bar slid, which is why
-       the black bars looked intermittent. Same shape as the frame, same units, no bars.
-       contain STAYS: the file-picker path can hand us an image of any aspect, and cropping
-       someone's chosen photo to fit would be worse than bordering it. */
+    /* Full bleed. The capture is exactly the viewfinder's crop, so it is always 3:4 (see
+       .cam-frame): the box is given that shape rather than a height, and the image fills it
+       edge to edge. An inset box reads as a photo sitting on a page; running it to the screen
+       edge makes it the page.
+       Nothing here is measured against viewport height any more, so Safari's URL bar sliding
+       cannot bring back the black bars this replaced — the shape is fixed by the ratio alone.
+       contain STAYS: the file-picker path can hand us an image of any aspect, and cropping a
+       photo someone chose themselves would be worse than bordering it. */
     .photo-wrap {
-      position: relative; margin: 0 auto; background: #000; flex-shrink: 0;
-      width: min(100%, calc(67vh * 0.75));
-      width: min(100%, calc(67dvh * 0.75));
+      position: relative; width: 100%; background: #000; flex-shrink: 0;
       aspect-ratio: 3 / 4;
     }
     #resultPhoto { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -964,6 +963,26 @@
     // bar to its natural height immediately; the next state change measures again.
     window.addEventListener('resize', () => { $('camControls').style.height = ''; });
 
+    // How far the frame is currently pushed from where layout puts it. Tracked rather than read
+    // back off the element, because clearing the transform to measure the natural position would
+    // commit that as a style change and the transition would restart from there.
+    let frameShift = 0;
+
+    // Analysing centres the frame in the screen; everything else leaves it where the flow puts it,
+    // which is the top-middle position the composing and coaching states share. Measured, not
+    // computed from constants: the frame's height depends on dvh and on the device.
+    function placeFrame(centred) {
+      const frame = $('camFrame');
+      const r = frame.getBoundingClientRect();
+      if (!r.height) { return; }                 // not laid out yet — nothing to place
+      const natural = r.top - frameShift;
+      // The section is position:fixed inset:0, so its box is the visual viewport — innerHeight
+      // lies on iOS while the URL bar is sliding.
+      const screenH = $('camera').getBoundingClientRect().height || r.height;
+      frameShift = centred ? Math.max(0, (screenH - r.height) / 2) - natural : 0;
+      frame.style.transform = frameShift ? 'translateY(' + Math.round(frameShift) + 'px)' : '';
+    }
+
     function setCamState(s) {
       // Measured BEFORE the panels change, because this is the height we are animating FROM.
       // Reading it afterwards only ever worked because an earlier call had pinned an explicit
@@ -989,6 +1008,8 @@
       // starts.
       if (s === 'loading') { if (from) $('camControls').style.height = from + 'px'; }
       else resizeControls(from);
+      // After the bar, so the natural position this measures is the one the frame is settling to.
+      placeFrame(s === 'loading');
     }
 
     async function startCamera() {
