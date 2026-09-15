@@ -619,6 +619,7 @@
 
         'toast.copied': 'Copied!',
         'toast.allCopied': 'All copied!',
+        'toast.tagsCopied': 'Hashtags copied — paste them into the caption',
         'toast.saved': 'Saved',
         'toast.copyFail': 'Copy failed',
         'toast.noCam': 'Camera unavailable — pick a photo instead',
@@ -673,6 +674,7 @@
 
         'toast.copied': '已复制！',
         'toast.allCopied': '已全部复制！',
+        'toast.tagsCopied': '标签已复制 — 粘贴到文案里即可',
         'toast.saved': '已保存',
         'toast.copyFail': '复制失败',
         'toast.noCam': '无法使用相机 — 请改从相册选一张',
@@ -1548,20 +1550,38 @@
     // just without the hashtags, so both buttons opened the same sheet and the second one looked
     // broken. Save writes the file straight out; only Share asks the OS anything.
     function filename() {
-      // Dated, because a camera roll full of daka.jpg, daka(1).jpg is nobody's idea of a keeper.
+      // Dated, because a folder full of daka.jpg, daka(1).jpg is nobody's idea of a keeper — but
+      // spaced and punctuated like a screenshot rather than run together as digits, which read as
+      // a serial number. Still sorts chronologically.
+      //
+      // Only Files and desktop downloads ever see this. Saving through the sheet to Photos hands
+      // the name to iOS, which discards it and assigns its own.
       const d = new Date(), p = (n) => String(n).padStart(2, '0');
-      return `dakaba-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
+      const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+      // Dots, not colons: a colon is illegal in a filename on every platform that matters.
+      const time = `${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+      return `DaKaBa ${day} ${time}.jpg`;
     }
 
     const canShareFile = (file) => !!(navigator.canShare && navigator.canShare({ files: [file] }));
 
+    // The photo goes alone. Attaching `text` as well makes iOS treat the text as the item being
+    // shared: the sheet falls back to a generic file placeholder instead of the picture, and some
+    // targets take the words and drop the image entirely. Sharing a photo should look like sharing
+    // a photo.
+    //
+    // The hashtags are not lost — they go to the clipboard as the sheet opens, which is one paste
+    // into the caption field wherever the photo lands. Same helper the pills use.
     async function sharePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
       const tags = (analysisResult && analysisResult.hashtags || []).join(' ');
       const file = new File([blob], filename(), { type: 'image/jpeg' });
       if (canShareFile(file)) {
-        try { await navigator.share({ files: [file], text: tags }); return; } catch (e) { if (e.name === 'AbortError') return; }
+        // Before share(), not after: the clipboard write needs the user gesture that is still
+        // live here, and awaiting share() first spends it on the sheet.
+        if (tags) await copyText(tags, tr('toast.tagsCopied'));
+        try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
       }
       downloadPhoto(blob);   // no share support (most desktops) — saving is the useful thing left
     }
