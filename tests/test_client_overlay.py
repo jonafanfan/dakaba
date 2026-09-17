@@ -416,6 +416,56 @@ def test_the_frame_is_a_standard_photo_shape():
     assert "aspect-ratio: 3 / 4" in rule.group(1), "the frame is no longer a standard photo shape"
 
 
+def test_nothing_anchored_to_the_top_ignores_the_safe_area():
+    """viewport-fit=cover means the page runs under the status bar and the notch. In Safari the
+    browser chrome hid that; in the native WebView it does not, and the language and theme toggles
+    ended up underneath the clock.
+
+    Any rule pinning something near the top has to add env(safe-area-inset-top). Checked for small
+    offsets only — something deliberately placed mid-screen is not what this is about.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    assert "viewport-fit=cover" in html, "the premise of this test has changed"
+    offenders = []
+    for rule in re.finditer(r"\.([\w-]+)\s*\{([^}]*)\}", html):
+        name, body = rule.group(1), rule.group(2)
+        if "position: absolute" not in body and "position: fixed" not in body:
+            continue
+        top = re.search(r"(?<![-\w])top:\s*(\d+)px", body)
+        if top and int(top.group(1)) < 80 and "safe-area-inset-top" not in body:
+            offenders.append(f".{name} (top: {top.group(1)}px)")
+    assert not offenders, "pinned under the status bar: " + ", ".join(offenders)
+
+
+def test_hidden_beats_any_class_that_sets_display():
+    """`hidden` is only display:none in the user-agent stylesheet, so an author rule that sets
+    display overrides it. .sheet's own `display: flex` did exactly that: the tip sheet covered the
+    whole screen from launch, on a device, with nothing tappable behind it.
+
+    Pinned as a rule rather than per-element, because the trap is generic — any future element
+    given both a `hidden` attribute and a display of its own would hit it.
+    """
+    html = PAGE.read_text(encoding="utf-8")
+    rule = re.search(r"\[hidden\]\s*\{([^}]*)\}", html)
+    assert rule, "nothing makes the hidden attribute win over a class's display"
+    body = rule.group(1)
+    assert "display: none" in body and "!important" in body, (
+        f"[hidden] must force display:none, got: {body.strip()!r}"
+    )
+
+
+def test_every_hidden_element_has_something_that_can_show_it():
+    """A hidden element nothing ever unhides is dead markup — and one the page tries to show via a
+    class instead of the attribute would stay hidden forever now that [hidden] is !important."""
+    html = PAGE.read_text(encoding="utf-8")
+    hidden_ids = re.findall(r'id="(\w+)"[^>]*\shidden[\s>]', html)
+    assert hidden_ids, "no hidden elements found — has the markup changed shape?"
+    for el_id in hidden_ids:
+        assert re.search(rf"\$\('{el_id}'\)\.hidden\s*=", html), (
+            f"#{el_id} is hidden but nothing ever sets .hidden on it"
+        )
+
+
 def test_the_results_photo_is_shown_in_the_shape_it_was_taken_in():
     """The capture is exactly the viewfinder's crop, so it is always the frame's 3:4. A results box
     of any other shape letterboxes it under object-fit: contain.

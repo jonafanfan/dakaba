@@ -150,7 +150,14 @@ def run(extra):
     assert result.returncode == 0, (
         f"the page threw while running a frame\n--- stderr ---\n{result.stderr.strip()[:2000]}"
     )
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    out = result.stdout.strip().splitlines()
+    assert out, (
+        "the page ran but printed nothing. Usually a promise that never settles, so the .then() "
+        "holding the console.log never fires and node exits quietly — which is how a hung "
+        "presentPaywall looked on a device: a button that did nothing at all.\n"
+        f"--- stderr ---\n{result.stderr.strip()[:1000]}"
+    )
+    return json.loads(out[-1])
 
 
 # 0.88 is where the engine actually puts the feet. The old fixtures used 0.667, a value
@@ -1086,7 +1093,7 @@ def paywall_returning(result, extra=""):
       window.Capacitor.Plugins.RevenueCatUI = {{
         presentPaywall: () => {{ presented++; return Promise.resolve({{ result: '{result}' }}); }},
       }};
-      tipOffering = {{ identifier: 'default' }};
+      tipOffering = {{ identifier: 'default', paywall: {{ template: 'x' }} }};
       const realSheet = showTipSheet;
       showTipSheet = () => {{ sheetShown++; realSheet(); }};
       {extra}
@@ -1127,12 +1134,33 @@ def test_a_throwing_paywall_still_reaches_the_sheet():
       window.Capacitor.Plugins.RevenueCatUI = {
         presentPaywall: () => Promise.reject(new Error('no ui')),
       };
-      tipOffering = { identifier: 'default' };
+      tipOffering = { identifier: 'default', paywall: { template: 'x' } };
       const realSheet = showTipSheet;
       showTipSheet = () => { sheetShown++; realSheet(); };
       openTip().then(() => console.log(JSON.stringify({ sheetShown })));
     """)
     assert out["sheetShown"] == 1, "a broken paywall took the tip jar down with it"
+
+
+def test_an_offering_with_no_paywall_goes_straight_to_the_sheet():
+    """presentPaywall on an offering with no paywall designed does not return NOT_PRESENTED — it
+    never settles, so awaiting it hangs and the fallback is never reached. Tapping the tip button
+    did nothing at all on a device, silently, with a green suite.
+
+    So the paywall is only ever asked for when the offering actually carries one.
+    """
+    out = run(RC_STUB + """
+      let presented = 0, sheetShown = 0;
+      window.Capacitor.Plugins.RevenueCatUI = {
+        presentPaywall: () => { presented++; return new Promise(() => {}); },   // never settles
+      };
+      tipOffering = { identifier: 'default' };        // no paywall attached
+      const realSheet = showTipSheet;
+      showTipSheet = () => { sheetShown++; realSheet(); };
+      openTip().then(() => console.log(JSON.stringify({ presented, sheetShown })));
+    """)
+    assert out["presented"] == 0, "asked for a paywall that does not exist"
+    assert out["sheetShown"] == 1, "the tip button did nothing"
 
 
 def test_the_tip_package_prefers_the_product_named_tip():

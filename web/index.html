@@ -70,6 +70,11 @@
     :root[data-theme="light"] { color-scheme: light; }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    /* The `hidden` attribute is only display:none in the USER-AGENT stylesheet, so any author rule
+       that sets display beats it — .sheet's own `display: flex` did exactly that, and the tip
+       sheet covered the whole screen from launch with nothing tappable behind it. Author-level
+       and !important so an element marked hidden is hidden, whatever its class says. */
+    [hidden] { display: none !important; }
 
     body {
       background: var(--bg);
@@ -130,7 +135,7 @@
        every screen would put a settings control inside the viewfinder for something nobody
        changes mid-shoot. */
     .theme-toggle {
-      position: absolute; top: 14px; left: 16px;
+      position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 16px;
       display: flex; padding: 2px; gap: 2px;
       border: 1px solid var(--text2); border-radius: 100px;
     }
@@ -143,7 +148,7 @@
     .theme-opt.on { background: var(--accent); color: #fff; }
 
     .lang-toggle {
-      position: absolute; top: 14px; right: 16px;
+      position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 16px;
       display: flex; padding: 2px; gap: 2px;
       border: 1px solid var(--text2); border-radius: 100px;
     }
@@ -1809,9 +1814,16 @@
     // in until someone builds one, and may stay the state on a Test Store offering. Treating that
     // as a failure would leave the button dead, so it falls through to the sheet below, which is
     // built from the same offering and needs nothing configured.
+    // Does this offering actually carry a paywall? RevenueCat only attaches one when somebody has
+    // designed it in the dashboard, and presentPaywall on an offering without one does not return
+    // NOT_PRESENTED as you would hope — it never settles at all, so an `await` on it hangs and the
+    // fallback below is never reached. Tapping the button did nothing, on a device, silently.
+    // Asking first is deterministic; waiting on a promise that has no reason to resolve is not.
+    const hasPaywall = (o) => !!(o && (o.paywall || o.paywallComponents));
+
     async function openTip() {
       const ui = rcUI();
-      if (ui && ui.presentPaywall && tipOffering) {
+      if (ui && ui.presentPaywall && hasPaywall(tipOffering)) {
         try {
           const res = await ui.presentPaywall({ offering: tipOffering });
           const result = (res && res.result) || res;
