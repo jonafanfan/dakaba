@@ -34,6 +34,7 @@ const played = [];     // every play() call, by element id — a suspended <vide
 // A shared counter stamped on both is what makes "did A happen before B" answerable.
 let seq = 0;
 let frameTranslate = 0;   // px the frame is currently transformed by, reflected in its rect
+const hiddenSet = [];     // every `el.hidden = v`, in order, by element id
 const cues = [];      // every #coachText assignment, in order
 const hints = [];     // every #placeHint assignment, in order
 const styles = [];    // every style property assignment, tagged with the element id
@@ -62,6 +63,11 @@ function el(id) {
       toggle(cls, val){ toggles.push({ id, cls, val, seq: seq++ }); },
       contains(){ return false; },
     },
+    // getElementById hands back a fresh object each call, so a plain property would not survive
+    // being read back. Recorded instead, which is also what lets a test see the ORDER things were
+    // shown in.
+    set hidden(v) { hiddenSet.push({ id, v }); },
+    get hidden() { const l = hiddenSet.filter(h => h.id === id); return l.length ? l[l.length - 1].v : true; },
     addEventListener(){}, removeEventListener(){}, click(){},
     querySelectorAll(){ return []; }, appendChild(){}, remove(){},
     set textContent(v) {
@@ -979,6 +985,211 @@ def test_the_frame_moves_by_transform_not_by_layout():
         assert banned not in rule, f"{banned} moves the frame by relayout"
     placed = re.search(r"function placeFrame\(centred\) \{(.*?)\n    \}", html, re.S).group(1)
     assert "translateY" in placed, "placeFrame no longer moves the frame by transform"
+
+
+# ── tip jar ─────────────────────────────────────────────────────────────────
+#
+# In-app purchase is a store transaction, so this is native-only by necessity — the same wall the
+# camera roll runs into. The web build must be completely untouched by it.
+
+RC_STUB = """
+  const rc = { configured: [], purchased: [] };
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: { Purchases: {
+      configure: (o) => { rc.configured.push(o); return Promise.resolve(); },
+      getOfferings: () => Promise.resolve({ current: { availablePackages: [
+        { identifier: 'tip_small', product: { title: 'Small tip', priceString: '£1.99' } },
+        { identifier: 'tip_large', product: { title: 'Large tip', priceString: '£4.99' } },
+      ] } }),
+      purchasePackage: (o) => { rc.purchased.push(o); return Promise.resolve({}); },
+    } },
+  };
+"""
+
+
+def test_the_tip_jar_stays_hidden_on_the_web():
+    """dakaba.pages.dev has no native bridge and cannot make a store purchase. Offering a tip that
+    cannot complete is worse than not asking, so the button never appears and none of this runs."""
+    out = run("""
+      initTipJar().then(() => console.log(JSON.stringify({
+        shown: hiddenSet.filter(h => h.id === 'tipBtn'),
+      })));
+    """)
+    assert out["shown"] == [], "the tip button was touched on a platform that cannot buy anything"
+
+
+def test_the_tip_jar_stays_hidden_without_a_key():
+    """A checkout of this repo has no RevenueCat key in it. That must degrade to no button, not to
+    a configure() call that throws."""
+    out = run(RC_STUB + """
+      RC_API_KEY = '';          // as a fork or a fresh checkout would have it
+      initTipJar().then(() => console.log(JSON.stringify({
+        configured: rc.configured.length,
+        shown: hiddenSet.filter(h => h.id === 'tipBtn'),
+      })));
+    """)
+    assert out["configured"] == 0, "configured RevenueCat with an empty key"
+    assert out["shown"] == []
+
+
+def test_the_tip_button_appears_only_once_there_is_something_to_buy():
+    """Shown after RevenueCat answers with real packages — not on configure, and not optimistically
+    before the offerings come back."""
+    out = run(RC_STUB + """
+      RC_API_KEY = 'test_fake';
+      initTipJar().then(() => console.log(JSON.stringify({
+        key: rc.configured[0].apiKey,
+        shown: hiddenSet.filter(h => h.id === 'tipBtn').map(h => h.v),
+      })));
+    """)
+    assert out["key"] == "test_fake"
+    assert out["shown"] == [False], f"tip button visibility: {out['shown']}"
+
+
+def test_an_empty_offering_leaves_the_button_hidden():
+    out = run("""
+      RC_API_KEY = 'test_fake';
+      window.Capacitor = { isNativePlatform: () => true, Plugins: { Purchases: {
+        configure: () => Promise.resolve(),
+        getOfferings: () => Promise.resolve({ current: { availablePackages: [] } }),
+      } } };
+      initTipJar().then(() => console.log(JSON.stringify({
+        shown: hiddenSet.filter(h => h.id === 'tipBtn'),
+      })));
+    """)
+    assert out["shown"] == [], "offered a tip with no packages behind it"
+
+
+def test_a_failing_revenuecat_never_breaks_the_app():
+    """A tip jar that takes the camera down with it would be a poor trade."""
+    out = run("""
+      // Without a key initTipJar returns before it reaches configure(), which made an earlier
+      // version of this test pass against code that had no error handling at all.
+      RC_API_KEY = 'test_fake';
+      window.Capacitor = { isNativePlatform: () => true, Plugins: { Purchases: {
+        configure: () => Promise.reject(new Error('network')),
+      } } };
+      initTipJar()
+        .then(() => console.log(JSON.stringify({ ok: true, shown: hiddenSet.filter(h => h.id === 'tipBtn') })))
+        .catch(e => console.log(JSON.stringify({ ok: false, err: String(e) })));
+    """)
+    assert out["ok"] is True, f"initTipJar rejected instead of degrading: {out.get('err')}"
+    assert out["shown"] == []
+
+
+def paywall_returning(result, extra=""):
+    """Drive openTip() with a paywall that answers `result`, and report what happened after."""
+    return run(RC_STUB + f"""
+      toast = (m) => {{ (globalThis.toasts = globalThis.toasts || []).push(m); }};
+      let presented = 0, sheetShown = 0;
+      window.Capacitor.Plugins.RevenueCatUI = {{
+        presentPaywall: () => {{ presented++; return Promise.resolve({{ result: '{result}' }}); }},
+      }};
+      tipOffering = {{ identifier: 'default' }};
+      const realSheet = showTipSheet;
+      showTipSheet = () => {{ sheetShown++; realSheet(); }};
+      {extra}
+      openTip().then(() => console.log(JSON.stringify({{
+        presented, sheetShown, toasts: globalThis.toasts || [],
+      }})));
+    """)
+
+
+@pytest.mark.parametrize("result", ["PURCHASED", "RESTORED"])
+def test_a_paywall_purchase_is_thanked_and_stops_there(result):
+    out = paywall_returning(result)
+    assert out["presented"] == 1
+    assert out["sheetShown"] == 0, "showed our own sheet on top of a completed purchase"
+    assert out["toasts"] == ["Thank you — genuinely"]
+
+
+def test_a_cancelled_paywall_says_nothing_and_shows_no_sheet():
+    """Cancelling is a decision. Answering it by immediately presenting a second way to pay is
+    the app arguing with them."""
+    out = paywall_returning("CANCELLED")
+    assert out["toasts"] == [], f"complained about a cancellation: {out['toasts']}"
+    assert out["sheetShown"] == 0, "re-asked after they said no"
+
+
+@pytest.mark.parametrize("result", ["NOT_PRESENTED", "ERROR"])
+def test_no_paywall_falls_back_to_our_own_sheet(result):
+    """NOT_PRESENTED is the state this project is in until a paywall is designed in the dashboard,
+    and may be permanent on a Test Store offering. Treating it as a failure would leave the button
+    dead; the sheet is built from the same offering and needs nothing configured."""
+    out = paywall_returning(result)
+    assert out["sheetShown"] == 1, f"{result} left the tip button doing nothing"
+
+
+def test_a_throwing_paywall_still_reaches_the_sheet():
+    out = run(RC_STUB + """
+      let sheetShown = 0;
+      window.Capacitor.Plugins.RevenueCatUI = {
+        presentPaywall: () => Promise.reject(new Error('no ui')),
+      };
+      tipOffering = { identifier: 'default' };
+      const realSheet = showTipSheet;
+      showTipSheet = () => { sheetShown++; realSheet(); };
+      openTip().then(() => console.log(JSON.stringify({ sheetShown })));
+    """)
+    assert out["sheetShown"] == 1, "a broken paywall took the tip jar down with it"
+
+
+def test_the_tip_package_prefers_the_product_named_tip():
+    """Matching the product id first lets the dashboard rename the package without breaking this;
+    the lifetime fallback means a default offering works before anyone has renamed anything."""
+    out = run("""
+      const byId = pickTipPackage([
+        { identifier: 'x', packageType: 'LIFETIME', product: { identifier: 'other' } },
+        { identifier: 'y', product: { identifier: 'tip' } },
+      ]);
+      const byType = pickTipPackage([
+        { identifier: 'a', product: { identifier: 'nope' } },
+        { identifier: 'b', packageType: 'LIFETIME', product: { identifier: 'whatever' } },
+      ]);
+      const empty = pickTipPackage([]);
+      console.log(JSON.stringify({ byId: byId.identifier, byType: byType.identifier, empty }));
+    """)
+    assert out["byId"] == "y", "product id 'tip' should win over package type"
+    assert out["byType"] == "b", "no 'tip' product should fall back to the lifetime package"
+    assert out["empty"] is None, "an empty offering must yield nothing to sell"
+
+
+def test_nothing_anywhere_reads_an_entitlement():
+    """The app is free and stays free. A tip buys a thank you and nothing else — no gate, no
+    dakaba_pro, no branch that asks whether you have paid."""
+    # Comments stripped first: this is a claim about what the code does, and the comments
+    # explaining why nothing is gated necessarily use the words being banned.
+    code = re.sub(r"/\*.*?\*/", "", page_script(), flags=re.S)
+    code = re.sub(r"(?m)^\s*//.*$", "", code)
+    code = re.sub(r"\s//[^\n\"']*$", "", code, flags=re.M)
+    for banned in ("entitlements", "dakaba_pro", "isPro", "hasActive"):
+        assert banned not in code, f"{banned!r} is read in code — something is being gated"
+
+
+def test_a_cancelled_tip_says_nothing():
+    """Cancelling is a choice, not a fault. Scolding someone for deciding not to tip is the fastest
+    way to make them regret opening it."""
+    out = run(RC_STUB + """
+      toast = (m) => { (globalThis.toasts = globalThis.toasts || []).push(m); };
+      window.Capacitor.Plugins.Purchases.purchasePackage =
+        () => Promise.reject({ code: 'PURCHASE_CANCELLED' });
+      buyTip({ identifier: 'tip_small' }, null)
+        .then(() => console.log(JSON.stringify({ toasts: globalThis.toasts || [] })));
+    """)
+    assert out["toasts"] == [], f"complained about a cancelled purchase: {out['toasts']}"
+
+
+def test_a_completed_tip_thanks_them():
+    out = run(RC_STUB + """
+      toast = (m) => { (globalThis.toasts = globalThis.toasts || []).push(m); };
+      buyTip({ identifier: 'tip_small' }, null)
+        .then(() => console.log(JSON.stringify({
+          toasts: globalThis.toasts || [], purchased: rc.purchased.length,
+        })));
+    """)
+    assert out["purchased"] == 1
+    assert out["toasts"] == ["Thank you — genuinely"]
 
 
 def test_a_scan_and_a_retake_produce_the_same_coaching_state():

@@ -266,11 +266,18 @@ def test_disallowed_origin_gets_no_cors_headers(client, ok_analysis):
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_the_production_origin_is_allowed_by_default():
-    """The deployed frontend must work with no env var set in Render."""
-    assert api_server.ALLOWED_ORIGINS == ["https://dakaba.pages.dev"], (
-        f"expected only the live frontend, got {api_server.ALLOWED_ORIGINS}"
-    )
+def test_the_shipped_frontends_are_allowed_by_default():
+    """All three must work with no env var set in Render: the web frontend, and the native shell,
+    which serves the same page from capacitor://localhost on iOS and http://localhost on Android.
+
+    Pinned as an exact list rather than a membership check, because the failure that matters is an
+    origin creeping IN. This endpoint is unauthenticated and every call spends money.
+    """
+    assert api_server.ALLOWED_ORIGINS == [
+        "https://dakaba.pages.dev",
+        "capacitor://localhost",
+        "http://localhost",
+    ], f"unexpected default origin set: {api_server.ALLOWED_ORIGINS}"
 
 
 def test_a_default_origin_actually_reaches_cors(client, ok_analysis):

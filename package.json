@@ -1,0 +1,30 @@
+{
+  "name": "dakaba",
+  "version": "1.0.0",
+  "description": "A mobile web app that tells you **where to stand** for a good check-in photo.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonafanfan/dakaba.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jonafanfan/dakaba/issues"
+  },
+  "homepage": "https://github.com/jonafanfan/dakaba#readme",
+  "dependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@revenuecat/purchases-capacitor": "^13.6.0",
+    "@revenuecat/purchases-capacitor-ui": "^13.6.0"
+  }
+}
