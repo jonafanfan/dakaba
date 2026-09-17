@@ -1108,7 +1108,7 @@ def test_a_paywall_purchase_is_thanked_and_stops_there(result):
     out = paywall_returning(result)
     assert out["presented"] == 1
     assert out["sheetShown"] == 0, "showed our own sheet on top of a completed purchase"
-    assert out["toasts"] == ["Thank you — genuinely"]
+    assert out["toasts"] == ["Thank you so much"]
 
 
 def test_a_cancelled_paywall_says_nothing_and_shows_no_sheet():
@@ -1161,6 +1161,47 @@ def test_an_offering_with_no_paywall_goes_straight_to_the_sheet():
     """)
     assert out["presented"] == 0, "asked for a paywall that does not exist"
     assert out["sheetShown"] == 1, "the tip button did nothing"
+
+
+def test_the_sheet_is_unhidden_before_it_is_opened():
+    """An element at display:none cannot transition, so clearing `hidden` and adding the open class
+    in the same task makes the card appear in place instead of rising. The order, and the reflow
+    between them, is the animation."""
+    out = run(RC_STUB + """
+      showTipSheet();
+      const unhide = hiddenSet.find(h => h.id === 'tipSheet' && h.v === false);
+      const opened = toggles.find(t => t.id === 'tipSheet' && t.cls === 'open' && t.val);
+      console.log(JSON.stringify({ unhide: !!unhide, opened: !!opened }));
+    """)
+    assert out["unhide"], "the sheet was never unhidden"
+    assert out["opened"], "the sheet was never opened, so it cannot have animated"
+
+
+def test_closing_animates_out_before_hiding():
+    """Hiding immediately would make the card vanish rather than slide away. The class comes off
+    first; `hidden` follows once the transition has had time to run."""
+    out = run(RC_STUB + """
+      showTipSheet();
+      closeTipSheet();
+      const closedNow = hiddenSet.filter(h => h.id === 'tipSheet' && h.v === true).length;
+      await new Promise(r => setTimeout(r, 400));
+      const closedAfter = hiddenSet.filter(h => h.id === 'tipSheet' && h.v === true).length;
+      const unopened = toggles.filter(t => t.id === 'tipSheet' && t.cls === 'open' && !t.val).length;
+      console.log(JSON.stringify({ closedNow, closedAfter, unopened }));
+    """)
+    assert out["unopened"] == 1, "the open class was never removed, so nothing animates out"
+    assert out["closedNow"] == 0, "hidden immediately — the card vanishes instead of sliding"
+    assert out["closedAfter"] == 1, "the sheet never actually hid after the animation"
+
+
+def test_the_close_is_not_left_to_an_event_reduced_motion_suppresses():
+    """transitionend never fires when the transition has been removed, which is exactly what
+    prefers-reduced-motion does here — the sheet would stay on screen permanently for the people
+    least able to dismiss it comfortably."""
+    html = PAGE.read_text(encoding="utf-8")
+    fn = re.search(r"function closeTipSheet\(\) \{(.*?)\n    \}", html, re.S).group(1)
+    assert "setTimeout" in fn, "the close depends on an event reduced motion suppresses"
+    assert "transitionend" not in fn
 
 
 def test_the_tip_package_prefers_the_product_named_tip():
@@ -1217,7 +1258,7 @@ def test_a_completed_tip_thanks_them():
         })));
     """)
     assert out["purchased"] == 1
-    assert out["toasts"] == ["Thank you — genuinely"]
+    assert out["toasts"] == ["Thank you so much"]
 
 
 def test_a_scan_and_a_retake_produce_the_same_coaching_state():

@@ -461,8 +461,13 @@ def test_every_hidden_element_has_something_that_can_show_it():
     hidden_ids = re.findall(r'id="(\w+)"[^>]*\shidden[\s>]', html)
     assert hidden_ids, "no hidden elements found — has the markup changed shape?"
     for el_id in hidden_ids:
-        assert re.search(rf"\$\('{el_id}'\)\.hidden\s*=", html), (
-            f"#{el_id} is hidden but nothing ever sets .hidden on it"
+        # Either set directly, or through a local alias — the sheet binds `const sheet = $(...)`
+        # first because it also needs a reflow between un-hiding and animating.
+        direct = re.search(rf"\$\('{el_id}'\)\.hidden\s*=", html)
+        aliases = re.findall(rf"(?:const|let)\s+(\w+)\s*=\s*\$\('{el_id}'\)", html)
+        via_alias = any(re.search(rf"\b{a}\.hidden\s*=", html) for a in aliases)
+        assert direct or via_alias, (
+            f"#{el_id} is hidden but nothing ever sets .hidden on it, directly or via an alias"
         )
 
 

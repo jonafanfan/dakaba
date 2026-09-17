@@ -403,14 +403,32 @@
       color: var(--text2); padding: 4px 8px; text-decoration: underline;
       text-underline-offset: 3px;
     }
+    /* A native sheet: the card rises from the bottom edge while the backdrop fades in behind it.
+       Both start from their closed state so there is something to animate FROM — the class is
+       added a frame after `hidden` is cleared, since an element that is display:none cannot
+       transition. The curve is the one iOS uses for its own sheets: fast out of the gate, long
+       settle, no bounce. */
     .sheet {
       position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end;
-      background: rgba(0,0,0,0.45); padding: 0;
+      background: rgba(0,0,0,0); padding: 0;
+      transition: background 260ms ease;
     }
+    .sheet.open { background: rgba(0,0,0,0.45); }
     .sheet-card {
       width: 100%; background: var(--surface); color: var(--text);
-      border-radius: 20px 20px 0 0; padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+      border-radius: 20px 20px 0 0; padding: 12px 20px calc(24px + env(safe-area-inset-bottom));
       display: flex; flex-direction: column; gap: 12px;
+      transform: translateY(100%);
+      transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .sheet.open .sheet-card { transform: translateY(0); }
+    /* The handle is decoration, but its absence is what makes a sheet read as a stuck panel. */
+    .sheet-grabber {
+      width: 36px; height: 5px; border-radius: 100px; background: var(--text2);
+      opacity: 0.4; margin: 0 auto 6px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sheet, .sheet-card { transition: none; }
     }
     .sheet-title { font-size: 19px; font-weight: 700; }
     .sheet-body { font-size: 14px; color: var(--text2); line-height: 1.5; }
@@ -551,6 +569,7 @@
   <!-- ── Tip jar (native only) ── -->
   <div class="sheet" id="tipSheet" hidden>
     <div class="sheet-card">
+      <div class="sheet-grabber" aria-hidden="true"></div>
       <div class="sheet-title" data-i18n="tip.title">Buy us a coffee</div>
       <div class="sheet-body" data-i18n="tip.body">DaKaBa is free and has no ads. If it got you a good photo, this helps keep the server on.</div>
       <div id="tipOptions"></div>
@@ -658,7 +677,7 @@
         'tip.title': 'Buy us a coffee',
         'tip.body': 'DaKaBa is free and has no ads. If it got you a good photo, this helps keep the server on.',
         'tip.close': 'No thanks',
-        'tip.thanks': 'Thank you — genuinely',
+        'tip.thanks': 'Thank you so much',
         'tip.failed': 'That did not go through',
         'tip.supporter': 'Thanks for supporting DaKaBa',
         'res.share': 'Share',
@@ -719,7 +738,7 @@
         'tip.title': '请我们喝杯咖啡',
         'tip.body': '打卡吧是免费的，也没有广告。如果它帮你拍到了好照片，这能帮我们维持服务器。',
         'tip.close': '暂时不用',
-        'tip.thanks': '真心感谢！',
+        'tip.thanks': '非常感谢！',
         'tip.failed': '支付没有完成',
         'tip.supporter': '感谢你支持打卡吧',
         'res.share': '分享',
@@ -1851,7 +1870,25 @@
         b.addEventListener('click', () => buyTip(pkg, b));
         box.appendChild(b);
       }
-      $('tipSheet').hidden = false;
+      const sheet = $('tipSheet');
+      sheet.hidden = false;
+      // A frame between un-hiding and opening, or there is no start state to transition from:
+      // an element going display:none -> flex -> transformed in one task simply appears in place.
+      // Same flush the controls bar needs for its height.
+      void sheet.offsetHeight;
+      sheet.classList.add('open');
+    }
+
+    // Closing runs the animation and only then hides, so the card slides out instead of vanishing.
+    // On a timer rather than transitionend, because reduced motion removes the transition
+    // altogether and the event would never fire — leaving the sheet permanently on screen for the
+    // people least able to dismiss it comfortably.
+    let sheetClosing = null;
+    function closeTipSheet() {
+      const sheet = $('tipSheet');
+      sheet.classList.remove('open');
+      clearTimeout(sheetClosing);
+      sheetClosing = setTimeout(() => { sheet.hidden = true; }, 320);
     }
 
     async function buyTip(pkg, button) {
@@ -1862,7 +1899,7 @@
       $('tipOptions').querySelectorAll('.tip-opt').forEach(b => { b.disabled = true; });
       try {
         await rc.purchasePackage({ aPackage: pkg });
-        $('tipSheet').hidden = true;
+        closeTipSheet();
         toast(tr('tip.thanks'));
       } catch (e) {
         // A cancelled purchase is a choice, not a fault — say nothing and let them close the sheet.
@@ -1879,7 +1916,13 @@
     $('saveBtn').addEventListener('click', savePhoto);
     $('retakeBtn').addEventListener('click', retake);
     $('tipBtn').addEventListener('click', openTip);
-    $('tipClose').addEventListener('click', () => { $('tipSheet').hidden = true; });
+    $('tipClose').addEventListener('click', closeTipSheet);
+    // Tap-out. Compared by id rather than identity because the target must be the backdrop itself
+    // — a tap that lands on the card bubbles up here too, and closing on that would make the sheet
+    // impossible to use.
+    $('tipSheet').addEventListener('click', (e) => {
+      if (e && e.target && e.target.id === 'tipSheet') closeTipSheet();
+    });
     initTipJar();
     $('scanAgain').addEventListener('click', async () => {
       if (!hasCamera) { stopLive(); show('home'); return; }
