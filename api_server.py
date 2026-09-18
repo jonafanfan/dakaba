@@ -23,7 +23,19 @@ logger = logging.getLogger("daka")
 # Preview deploys are NOT covered: Cloudflare gives each build its own subdomain
 # (abc123.dakaba.pages.dev), which cannot be listed in advance. A preview can show the UI but its
 # scans will fail CORS unless that exact origin is added here.
-DEFAULT_ALLOWED_ORIGINS = "https://dakaba.pages.dev"
+# The native shell is a third origin. A Capacitor iOS WebView serves the bundled page from
+# capacitor://localhost and sends exactly that as Origin; Android uses http://localhost. Neither
+# is dakaba.pages.dev, so without them every scan from the app fails CORS — which browsers report
+# as a generic network error, so the app just toasts "Analysis failed" with nothing pointing at
+# the cause. See README's local-development note; it is the same trap, one origin further on.
+#
+# NOTE: ALLOWED_ORIGINS in the Render dashboard REPLACES this list rather than adding to it, so if
+# it is set there, these have to be added there too.
+DEFAULT_ALLOWED_ORIGINS = ",".join([
+    "https://dakaba.pages.dev",
+    "capacitor://localhost",
+    "http://localhost",
+])
 ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS).split(",") if o.strip()
 ]

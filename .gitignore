@@ -17,3 +17,9 @@ daka_openai_key.txt
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Capacitor / native
+node_modules/
+ios/App/App/public/
+ios/App/build/
+DerivedData/

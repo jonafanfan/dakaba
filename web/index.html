@@ -70,6 +70,11 @@
     :root[data-theme="light"] { color-scheme: light; }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    /* The `hidden` attribute is only display:none in the USER-AGENT stylesheet, so any author rule
+       that sets display beats it — .sheet's own `display: flex` did exactly that, and the tip
+       sheet covered the whole screen from launch with nothing tappable behind it. Author-level
+       and !important so an element marked hidden is hidden, whatever its class says. */
+    [hidden] { display: none !important; }
 
     body {
       background: var(--bg);
@@ -130,7 +135,7 @@
        every screen would put a settings control inside the viewfinder for something nobody
        changes mid-shoot. */
     .theme-toggle {
-      position: absolute; top: 14px; left: 16px;
+      position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 16px;
       display: flex; padding: 2px; gap: 2px;
       border: 1px solid var(--text2); border-radius: 100px;
     }
@@ -143,7 +148,7 @@
     .theme-opt.on { background: var(--accent); color: #fff; }
 
     .lang-toggle {
-      position: absolute; top: 14px; right: 16px;
+      position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 16px;
       display: flex; padding: 2px; gap: 2px;
       border: 1px solid var(--text2); border-radius: 100px;
     }
@@ -391,6 +396,52 @@
     .pill:active { transform: scale(0.95); }
     .copy-all { font-size: 13px; color: var(--accent); font-weight: 500; }
 
+    /* Deliberately the quietest thing on the screen: below the actions, no fill, no accent.
+       A tip jar that shouts is a tip jar people resent. */
+    .tip-btn {
+      background: none; border: none; font-family: inherit; font-size: 13px;
+      color: var(--text2); padding: 4px 8px; text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    /* A native sheet: the card rises from the bottom edge while the backdrop fades in behind it.
+       Both start from their closed state so there is something to animate FROM — the class is
+       added a frame after `hidden` is cleared, since an element that is display:none cannot
+       transition. The curve is the one iOS uses for its own sheets: fast out of the gate, long
+       settle, no bounce. */
+    .sheet {
+      position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end;
+      background: rgba(0,0,0,0); padding: 0;
+      transition: background 260ms ease;
+    }
+    .sheet.open { background: rgba(0,0,0,0.45); }
+    .sheet-card {
+      width: 100%; background: var(--surface); color: var(--text);
+      border-radius: 20px 20px 0 0; padding: 12px 20px calc(24px + env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; gap: 12px;
+      transform: translateY(100%);
+      transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .sheet.open .sheet-card { transform: translateY(0); }
+    /* The handle is decoration, but its absence is what makes a sheet read as a stuck panel. */
+    .sheet-grabber {
+      width: 36px; height: 5px; border-radius: 100px; background: var(--text2);
+      opacity: 0.4; margin: 0 auto 6px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sheet, .sheet-card { transition: none; }
+    }
+    .sheet-title { font-size: 19px; font-weight: 700; }
+    .sheet-body { font-size: 14px; color: var(--text2); line-height: 1.5; }
+    .tip-opt {
+      width: 100%; height: 50px; border: 1px solid var(--accent); border-radius: 100px;
+      background: none; color: var(--accent); font-family: inherit; font-size: 16px;
+      font-weight: 600; margin-top: 4px;
+    }
+    .tip-opt[disabled] { opacity: 0.5; }
+    .sheet-close {
+      background: none; border: none; font-family: inherit; font-size: 14px;
+      color: var(--text2); padding: 10px; margin-top: 4px;
+    }
     .bottom { padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; align-items: center; }
     .btn { width: 100%; height: 52px; border: none; border-radius: 100px; font-family: inherit; font-size: 16px; font-weight: 600; }
     .btn:active { transform: scale(0.97); }
@@ -515,6 +566,17 @@
     </div>
   </section>
 
+  <!-- ── Tip jar (native only) ── -->
+  <div class="sheet" id="tipSheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-title" data-i18n="tip.title">Buy us a coffee</div>
+      <div class="sheet-body" data-i18n="tip.body">DaKaBa is free and has no ads. If it got you a good photo, this helps keep the server on.</div>
+      <div id="tipOptions"></div>
+      <button class="sheet-close" id="tipClose" data-i18n="tip.close">No thanks</button>
+    </div>
+  </div>
+
   <!-- ── Results ── -->
   <section id="results" class="screen">
     <div class="results-inner">
@@ -531,6 +593,9 @@
           <span class="scan-again" id="retakeBtn" data-i18n="res.retake">Retake</span>
           <span class="scan-again" id="scanAgain" data-i18n="cam.scanAgain">Scan again</span>
         </div>
+        <!-- Native only, and only once RevenueCat has answered with real products. Hidden by
+             default so the web build is byte-for-byte unaffected. -->
+        <button class="tip-btn" id="tipBtn" hidden data-i18n="tip.open">Buy us a coffee</button>
       </div>
     </div>
   </section>
@@ -608,6 +673,13 @@
         'reason.clean_background': 'Cleaner background here',
         'reason.default': 'Classic rule-of-thirds spot',
 
+        'tip.open': 'Buy us a coffee',
+        'tip.title': 'Buy us a coffee',
+        'tip.body': 'DaKaBa is free and has no ads. If it got you a good photo, this helps keep the server on.',
+        'tip.close': 'No thanks',
+        'tip.thanks': 'Thank you so much',
+        'tip.failed': 'That did not go through',
+        'tip.supporter': 'Thanks for supporting DaKaBa',
         'res.share': 'Share',
         'res.save': 'Save',
         'res.saveFiltered': 'Save with filter',
@@ -663,6 +735,13 @@
         'reason.clean_background': '这里背景更干净',
         'reason.default': '经典的三分线位置',
 
+        'tip.open': '请我们喝杯咖啡',
+        'tip.title': '请我们喝杯咖啡',
+        'tip.body': '打卡吧是免费的，也没有广告。如果它帮你拍到了好照片，这能帮我们维持服务器。',
+        'tip.close': '暂时不用',
+        'tip.thanks': '非常感谢！',
+        'tip.failed': '支付没有完成',
+        'tip.supporter': '感谢你支持打卡吧',
         'res.share': '分享',
         'res.save': '保存',
         'res.saveFiltered': '保存（含滤镜）',
@@ -1595,9 +1674,36 @@
     // So on a phone, Save opens the sheet. What separates it from Share is what goes in: Save
     // attaches the file alone, which puts "Save Image" first; Share attaches the hashtags too,
     // which is what you want when the destination is an app. One is for keeping, one for posting.
+    // Base64 for the native bridge, which cannot take a Blob.
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(r.error || new Error('unreadable'));
+        r.readAsDataURL(blob);
+      });
+    }
+    const savePlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SavePhoto) || null;
+
     async function savePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
+
+      // Inside the native shell, Save means save: straight to the camera roll, one tap, no sheet.
+      // On the web this is impossible — no browser API reaches Photos — which is why the sheet
+      // exists at all. If the native write fails or permission is refused we fall through to it
+      // rather than leaving the button looking broken.
+      const sp = savePlugin();
+      if (sp && sp.save) {
+        try {
+          await sp.save({ data: await blobToBase64(blob) });
+          toast(tr('toast.saved'));
+          return;
+        } catch (e) {
+          console.warn('camera roll save failed, falling back to the sheet:', e);
+        }
+      }
+
       const file = new File([blob], filename(), { type: 'image/jpeg' });
       if (canShareFile(file)) {
         try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
@@ -1691,6 +1797,164 @@
     applyLang();
 
     /* ── Wire up ── */
+    /* ── Tip jar (native only) ──────────────────────────────────────────────────
+       The app is free, has no ads, and costs real money to run: every scan is two OpenAI calls.
+       A tip jar is the honest way to ask, and the only monetisation that does not change what the
+       product is — nothing is withheld, no scan is gated, and the button lives AFTER the photo, so
+       it is only ever seen by someone the app has already helped.
+
+       This is native-only by necessity. In-app purchase is a store transaction; a web page cannot
+       make one, which is the same wall the camera roll runs into. On dakaba.pages.dev the button
+       stays hidden and none of this runs.
+
+       No bundler, deliberately — the page still has no build step. Capacitor's native bridge
+       exposes registered plugins on window.Capacitor.Plugins by name, so the RevenueCat SDK is
+       reachable without importing the npm package or compiling anything.
+
+       The key below is a PUBLIC SDK key. Unlike OPENAI_API_KEY, these are designed to ship inside
+       client binaries and cannot spend money or read another account — RevenueCat's secret keys
+       are a separate thing and must never appear here. A key starting `test_` is a Test Store key,
+       which runs the whole purchase flow without App Store Connect. */
+    // A RevenueCat Test Store key: it runs the whole purchase flow — offerings, paywall,
+    // entitlements — without App Store Connect or a paid developer account, which is what makes a
+    // working tip jar demonstrable at all before a store release exists.
+    //
+    // SWAP THIS BEFORE ANY STORE RELEASE. A `test_` key transacts nothing real; shipping it would
+    // mean an App Store build whose tip jar silently takes no money. The replacement is the
+    // platform key from RevenueCat (`appl_…` for iOS).
+    let RC_API_KEY = 'test_yIDmpHCJqdCeflZkqQMdrPyMdsy';
+
+    const native = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    const rcPlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Purchases) || null;
+    const rcUI = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.RevenueCatUI) || null;
+    let tipPackages = [];
+    let tipOffering = null;
+    let tipPackage = null;      // the one we actually sell: product "tip", else the lifetime package
+
+    // The tip is a one-off, so it is a lifetime package in RevenueCat's model. Matching the
+    // product identifier first means the dashboard can rename the package without breaking this;
+    // falling back to `lifetime` means a default offering still works before anyone has.
+    //
+    // Nothing here reads an entitlement. The app is free: there is no dakaba_pro, no gate, and no
+    // branch anywhere that asks whether you have paid. Tipping changes nothing except that we can
+    // say thank you.
+    function pickTipPackage(pkgs) {
+      const byProduct = pkgs.find(p => p.product && p.product.identifier === 'tip');
+      if (byProduct) return byProduct;
+      const lifetime = pkgs.find(p => p.packageType === 'LIFETIME' || p.identifier === '$rc_lifetime');
+      return lifetime || pkgs[0] || null;
+    }
+
+    // Never throws and never blocks the app. A tip jar that breaks the camera would be a poor
+    // trade, so every failure path here ends with the button simply staying hidden.
+    async function initTipJar() {
+      const rc = rcPlugin();
+      if (!native() || !rc || !RC_API_KEY) return;
+      try {
+        await rc.configure({ apiKey: RC_API_KEY });
+        const { current } = await rc.getOfferings();
+        // Only show the button once RevenueCat has answered with something buyable. Offering a
+        // tip that cannot be completed is worse than not asking.
+        tipPackages = (current && current.availablePackages) || [];
+        tipOffering = current || null;
+        tipPackage = pickTipPackage(tipPackages);
+        if (tipPackage) $('tipBtn').hidden = false;
+
+        // Display only. It exists so a returning supporter gets acknowledged, and for nothing
+        // else — no entitlement is read and no behaviour changes on the strength of it.
+        if (rc.addCustomerInfoUpdateListener) {
+          rc.addCustomerInfoUpdateListener((info) => {
+            const bought = info && info.customerInfo
+              && info.customerInfo.nonSubscriptionTransactions
+              && info.customerInfo.nonSubscriptionTransactions.length;
+            if (bought) $('tipBtn').textContent = tr('tip.supporter');
+          });
+        }
+      } catch (e) {
+        console.warn('tip jar unavailable:', e);
+      }
+    }
+
+    // RevenueCat's own paywall first, our sheet second. presentPaywall returns NOT_PRESENTED
+    // whenever no paywall has been designed in the dashboard — which is the state this project is
+    // in until someone builds one, and may stay the state on a Test Store offering. Treating that
+    // as a failure would leave the button dead, so it falls through to the sheet below, which is
+    // built from the same offering and needs nothing configured.
+    // Does this offering actually carry a paywall? RevenueCat only attaches one when somebody has
+    // designed it in the dashboard, and presentPaywall on an offering without one does not return
+    // NOT_PRESENTED as you would hope — it never settles at all, so an `await` on it hangs and the
+    // fallback below is never reached. Tapping the button did nothing, on a device, silently.
+    // Asking first is deterministic; waiting on a promise that has no reason to resolve is not.
+    const hasPaywall = (o) => !!(o && (o.paywall || o.paywallComponents));
+
+    async function openTip() {
+      const ui = rcUI();
+      if (ui && ui.presentPaywall && hasPaywall(tipOffering)) {
+        try {
+          const res = await ui.presentPaywall({ offering: tipOffering });
+          const result = (res && res.result) || res;
+          if (result === 'PURCHASED' || result === 'RESTORED') { toast(tr('tip.thanks')); return; }
+          if (result === 'CANCELLED') return;          // a choice, not a fault — say nothing
+          // NOT_PRESENTED and ERROR both fall through.
+        } catch (e) {
+          console.warn('paywall unavailable, falling back to the sheet:', e);
+        }
+      }
+      showTipSheet();
+    }
+
+    function showTipSheet() {
+      const box = $('tipOptions');
+      box.innerHTML = '';
+      for (const pkg of tipPackages) {
+        const b = document.createElement('button');
+        b.className = 'tip-opt';
+        // priceString is already localised and currency-formatted by the store — never build this
+        // from the raw number, or a British user is offered "$3".
+        const price = (pkg.product && pkg.product.priceString) || '';
+        const label = (pkg.product && pkg.product.title) || '';
+        b.textContent = price ? `${label} · ${price}`.trim() : label;
+        b.addEventListener('click', () => buyTip(pkg, b));
+        box.appendChild(b);
+      }
+      const sheet = $('tipSheet');
+      sheet.hidden = false;
+      // A frame between un-hiding and opening, or there is no start state to transition from:
+      // an element going display:none -> flex -> transformed in one task simply appears in place.
+      // Same flush the controls bar needs for its height.
+      void sheet.offsetHeight;
+      sheet.classList.add('open');
+    }
+
+    // Closing runs the animation and only then hides, so the card slides out instead of vanishing.
+    // On a timer rather than transitionend, because reduced motion removes the transition
+    // altogether and the event would never fire — leaving the sheet permanently on screen for the
+    // people least able to dismiss it comfortably.
+    let sheetClosing = null;
+    function closeTipSheet() {
+      const sheet = $('tipSheet');
+      sheet.classList.remove('open');
+      clearTimeout(sheetClosing);
+      sheetClosing = setTimeout(() => { sheet.hidden = true; }, 320);
+    }
+
+    async function buyTip(pkg, button) {
+      const rc = rcPlugin();
+      if (!rc) return;
+      // Guard the whole sheet, not just this button: a double tap on two different amounts would
+      // otherwise start two purchases.
+      $('tipOptions').querySelectorAll('.tip-opt').forEach(b => { b.disabled = true; });
+      try {
+        await rc.purchasePackage({ aPackage: pkg });
+        closeTipSheet();
+        toast(tr('tip.thanks'));
+      } catch (e) {
+        // A cancelled purchase is a choice, not a fault — say nothing and let them close the sheet.
+        if (!(e && (e.code === 'PURCHASE_CANCELLED' || e.userCancelled))) toast(tr('tip.failed'));
+        $('tipOptions').querySelectorAll('.tip-opt').forEach(b => { b.disabled = false; });
+      }
+    }
+
     $('startBtn').addEventListener('click', startCamera);
     $('shutter').addEventListener('click', scanScene);
     $('takePhotoBtn').addEventListener('click', takePhoto);
@@ -1698,6 +1962,15 @@
     $('shareBtn').addEventListener('click', sharePhoto);
     $('saveBtn').addEventListener('click', savePhoto);
     $('retakeBtn').addEventListener('click', retake);
+    $('tipBtn').addEventListener('click', openTip);
+    $('tipClose').addEventListener('click', closeTipSheet);
+    // Tap-out. Compared by id rather than identity because the target must be the backdrop itself
+    // — a tap that lands on the card bubbles up here too, and closing on that would make the sheet
+    // impossible to use.
+    $('tipSheet').addEventListener('click', (e) => {
+      if (e && e.target && e.target.id === 'tipSheet') closeTipSheet();
+    });
+    initTipJar();
     $('scanAgain').addEventListener('click', async () => {
       if (!hasCamera) { stopLive(); show('home'); return; }
       show('camera');                       // before setCamState, so the bar can be measured
