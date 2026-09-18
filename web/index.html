@@ -1654,9 +1654,36 @@
     // So on a phone, Save opens the sheet. What separates it from Share is what goes in: Save
     // attaches the file alone, which puts "Save Image" first; Share attaches the hashtags too,
     // which is what you want when the destination is an app. One is for keeping, one for posting.
+    // Base64 for the native bridge, which cannot take a Blob.
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(r.error || new Error('unreadable'));
+        r.readAsDataURL(blob);
+      });
+    }
+    const savePlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SavePhoto) || null;
+
     async function savePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
+
+      // Inside the native shell, Save means save: straight to the camera roll, one tap, no sheet.
+      // On the web this is impossible — no browser API reaches Photos — which is why the sheet
+      // exists at all. If the native write fails or permission is refused we fall through to it
+      // rather than leaving the button looking broken.
+      const sp = savePlugin();
+      if (sp && sp.save) {
+        try {
+          await sp.save({ data: await blobToBase64(blob) });
+          toast(tr('toast.saved'));
+          return;
+        } catch (e) {
+          console.warn('camera roll save failed, falling back to the sheet:', e);
+        }
+      }
+
       const file = new File([blob], filename(), { type: 'image/jpeg' });
       if (canShareFile(file)) {
         try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
