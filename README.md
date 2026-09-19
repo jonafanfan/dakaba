@@ -236,6 +236,12 @@ was judged better than refusing every scan during an outage, but it is a bypass.
 
 ---
 
+## Gotchas
+
+Device behaviour we had to find by watching the app fail on a real phone — why the filters use an
+SVG colour matrix, why detection runs on a 480px copy, why the compass drift warning was deleted:
+[`docs/gotchas.md`](docs/gotchas.md).
+
 ## Known issues
 
 **No "you've moved since scanning" warning.** There used to be a two-dot framing lock for this, but
