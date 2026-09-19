@@ -23,14 +23,12 @@
       --tan-tint: #FBF1E4;
       --card-shadow: 0 2px 12px rgba(0,0,0,0.05);
 
-      /* ── Home screen proportions — the five numbers worth tuning ──
-         --mark-size    how big 打卡吧！is (clamped, so it shrinks on a narrow phone)
-         --mark-inset   gap between the characters and the viewfinder's edge
-         --mark-gap     how far outside that edge the corner marks sit
-         --hud-gap      how far outside it the REC / timecode / battery / format labels sit
-         --home-bottom  space under the hint line at the bottom of the screen
+      /* ── Home screen proportions ──
          Raise a gap to spread the framing out, lower it to close in on the mark. --mark-inset
-         moves the edge everything else is measured from, so it moves the marks AND the labels. */
+         moves the edge the marks and labels are both measured from, so it moves both.
+         space under the hint line at the bottom of the screen Raise a gap to spread the framing
+         out, lower it to close in on the mark. --mark-inset moves the edge everything else is
+         measured from, so it moves the marks AND the labels. */
       --mark-size: clamp(76px, 24vw, 96px);
       --mark-inset: 34px;
       --mark-gap: 46px;
@@ -39,11 +37,7 @@
     }
 
     /* Dark counterpart — warm near-blacks, not neutral greys, so the "Warm Film" identity
-       survives the flip. Only Home and Results theme: the camera screen and its overlays are
-       deliberately hardcoded dark (a viewfinder must never go light behind a live preview).
-       --accent is intentionally IDENTICAL in both themes: it is used as a button BACKGROUND
-       under white text, so brightening it for dark mode would drop that pair to ~2.7:1.
-       Left as-is it stays 3.3:1, and reads 5.6:1 as text on the dark bg. */
+       survives the flip. */
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
         --bg: #14110D;
@@ -70,10 +64,9 @@
     :root[data-theme="light"] { color-scheme: light; }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    /* The `hidden` attribute is only display:none in the USER-AGENT stylesheet, so any author rule
-       that sets display beats it — .sheet's own `display: flex` did exactly that, and the tip
-       sheet covered the whole screen from launch with nothing tappable behind it. Author-level
-       and !important so an element marked hidden is hidden, whatever its class says. */
+    /* The `hidden` attribute is only display:none in the USER-AGENT stylesheet, so any author
+       rule that sets display beats it — .sheet's own `display: flex` did exactly that, and the
+       tip sheet covered the whole screen from launch with nothing tappable behind it. */
     [hidden] { display: none !important; }
 
     body {
@@ -110,12 +103,7 @@
     .hud-time { top: calc((var(--hud-gap) - 4px) * -1); left: 50%; transform: translateX(-50%); }
     .hud-bat { top: calc((var(--hud-gap) + 3px) * -1); right: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
     /* The outline is drawn with a shadow rather than a border, so it can be 1px in light and 1.5
-       in dark without changing the icon's size. A 1px light hairline on a near-black ground reads
-       far weaker than the same hairline dark-on-light — not a contrast problem (this measures
-       6.3:1 in dark against 3.1:1 in light) but a perceptual one: the display bleeds a thin bright
-       line outwards until it is barely there, which is why the BAT text beside it still showed and
-       the battery did not. The fill is the more legible half, so it grows to carry more of the
-       shape. */
+       in dark without changing the icon's size. */
     .hud-bat-bar {
       width: 26px; height: 10px; border-radius: 2px; padding: 2px;
       box-shadow: inset 0 0 0 1px var(--text2);
@@ -131,9 +119,7 @@
     .char { font-family: "Noto Serif SC", serif; font-size: var(--mark-size); font-weight: 700; color: var(--text); line-height: 1.12; }
     .char-row { display: flex; padding-left: 48px; }
 
-    /* Language is chosen on the way in, so the switch lives on the home screen only. A copy on
-       every screen would put a settings control inside the viewfinder for something nobody
-       changes mid-shoot. */
+    /* Language is chosen on the way in, so the switch lives on the home screen only. */
     .theme-toggle {
       position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 16px;
       display: flex; padding: 2px; gap: 2px;
@@ -169,23 +155,11 @@
 
     /* ─── Camera ─── */
     /* The viewfinder gets its own region and the controls sit BELOW it, rather than floating on
-       top of a full-screen video. When they overlapped, the photo captured the strip hidden
-       behind the control panel: you framed someone using what you could see, and the shot came
-       out with them higher than you placed them, because the frame extended past the bottom of
-       what was visible. Now the video element IS the photo area, so visibleCrop measures the
-       right thing without knowing anything about the controls.
-       Small HUD bits — the cue, the badge, the level bar — still float over the image, the way
-       they do on any camera app. It was the large opaque panel that caused the mismatch. */
+       top of a full-screen video. */
     #camera { background: #14120F; }
     #camera.active { display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
 
-    /* The same live feed, blurred and dimmed, filling everything the 3:4 frame does not. A flat
-       black band above the frame read as a fault — as though the app had failed to fill the
-       screen — where a soft continuation reads as depth of field. It is also more honest: you can
-       see what the camera can see, and that it is not what you are taking.
-       One decode, two presentations — both elements share the stream, so this costs compositing
-       rather than a second video pipeline. The blur is deliberately large: browsers downsample
-       heavily blurred layers, so a wide radius is cheaper than a narrow one. */
+    /* The same live feed, blurred and dimmed, filling everything the 3:4 frame does not. */
     #videoBackdrop {
       position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
       filter: blur(34px) brightness(0.45) saturate(0.85);
@@ -193,10 +167,7 @@
       z-index: 0; pointer-events: none;
     }
     /* A fixed 3:4 frame — the shape a phone camera natively produces, and the shape every camera
-       app shows. Letting it fill the leftover space instead gave an arbitrary tall rectangle that
-       matched no standard photo, and forced a second crop off an already-cropped 16:9 stream.
-       Width is capped so the frame never grows taller than the space available, which keeps the
-       aspect exact instead of letting a max-height quietly squash it. */
+       app shows. */
     .cam-frame {
       position: relative; overflow: hidden; background: #000; z-index: 1;
       box-shadow: 0 0 0 1px rgba(255,255,255,0.28), 0 18px 50px rgba(0,0,0,0.45);
@@ -206,34 +177,21 @@
       aspect-ratio: 3 / 4;
 
       /* The frame travels: top-middle to compose, centre of the screen while the scan is in
-         flight, top-middle again to coach. It moves by TRANSFORM, not by layout — a live <video>
-         re-rasterises when its box changes, which is what made the earlier height-driven move
-         stutter and flash black. A transform is composited and touches nothing inside. */
+         flight, top-middle again to coach. */
       transition: transform 340ms cubic-bezier(0.4, 0, 0.2, 1);
     }
     @media (prefers-reduced-motion: reduce) { .cam-frame { transition: none; } }
     .cam-controls {
       flex: 0 1 auto; position: relative; z-index: 2;
 
-      /* No background and no blur of its own. The blurred feed already fills the whole screen
-         behind this, so the bar has nothing to add — it IS the surround, with controls on it.
-         Two earlier attempts got this wrong in the same way. A tint, however light, sits ON TOP
-         of the surround and makes the bottom of the screen visibly darker than the strip above
-         the frame, which reads as a separate panel. And its own backdrop-filter re-blurred an
-         already-blurred feed at a different radius, so even the texture did not match.
-         Transparent is the only version guaranteed to match, because it is the same pixels.
-
-         Legibility comes from a shadow on the text instead of a wash behind it: the backdrop is
-         dimmed to 0.45 brightness, and the one control that must never be missed — Take Photo —
-         carries its own solid fill. */
+      /* No background and no blur of its own. */
       background: transparent;
       text-shadow: 0 1px 4px rgba(0,0,0,0.75);
       padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
 
       /* The three states put different things in here — a shutter, nothing at all, then the tip
-         panel — so the bar changes height and the frame centred above it jumps with it. Animating
-         the height makes the frame glide between the three positions instead of snapping. */
+         panel — so the bar changes height and the frame centred above it jumps with it. */
       overflow: hidden;
       transition: height 340ms cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -251,9 +209,7 @@
       position: absolute; top: calc(20px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,0.45); color: #fff; padding: 6px 16px; border-radius: 100px;
       font-size: 14px; font-weight: 600; white-space: nowrap; display: none;
-      /* Centred, with the level bar in the right corner — so it is capped short of reaching it.
-         A long scene name ("Riverside Promenade") would otherwise slide under the bar, which is
-         the collision this width exists to prevent. */
+      /* Centred, with the level bar in the right corner — so it is capped short of reaching it. */
       max-width: calc(100% - 200px); overflow: hidden; text-overflow: ellipsis;
     }
 
@@ -264,16 +220,9 @@
     .shutter-inner { width: 56px; height: 56px; border-radius: 50%; background: #fff; }
     .shutter-hint { color: rgba(255,255,255,0.92); font-size: 13px; }
 
-    /* Level slider (device tilt). Top RIGHT, not centred: centred it sat directly under the
-       scene badge and covered it. A tilt readout is glanced at, not read, so the corner costs it
-       nothing — and shrinking the track keeps the dot's travel obvious while freeing the middle
-       of the frame, which is the part of the shot the photographer is actually composing. */
-    /* Horizon level, the way a camera app does it: a line lying at the angle the phone is actually
-       rotated to, over a fixed horizontal reference, the two merging when you are level.
-       This replaced a dot sliding along a track, which could not work however the maths was fixed —
-       a dot shows a magnitude and leaves the direction to guesswork, because nothing on screen says
-       whether it marks the way the phone is leaning or the way you must turn it. A line has no such
-       ambiguity: it either looks parallel to the real horizon behind it or it does not. */
+    /* Horizon level, the way a camera app does it: a line lying at the angle the phone is
+       actually rotated to, over a fixed horizontal reference, the two merging when you are
+       level. */
     #camLevel { position: absolute; inset: 0; display: none; z-index: 25; pointer-events: none; }
     #camLevelRef, #camLevelLine {
       position: absolute; left: 31%; width: 38%; top: calc(50% - 1px); height: 2px;
@@ -288,7 +237,7 @@
     #camLevel.needs-fix #camLevelLine { background: #E67E22; box-shadow: 0 0 10px rgba(230,126,34,.8); }
 
     /* Crop marks on the frame corners: the clearest way to say the sharp rectangle is the shot
-       and the blur around it is not. Same device as the home screen and the app icon. */
+       and the blur around it is not. */
     .frame-ticks { position: absolute; inset: 0; pointer-events: none; z-index: 24; }
     .frame-ticks i { position: absolute; width: 22px; height: 22px; border: 0 solid rgba(255,255,255,0.9); }
     .frame-ticks i:nth-child(1) { top: 10px; left: 10px; border-top-width: 2px; border-left-width: 2px; }
@@ -333,9 +282,7 @@
     /* tip panel (overlays live camera) */
     .tip-panel { width: 100%; display: none; }
 
-    /* The one line of plain-English placement advice. Sits directly above the shutter because
-       that is where the eye already goes, and because the canvas caption under the marker cannot
-       express depth. */
+    /* The one line of plain-English placement advice. */
     .place-hint {
       color: #fff; font-size: 15px; line-height: 1.35; text-align: center;
       padding: 2px 4px 10px; text-wrap: balance;
@@ -349,23 +296,12 @@
     /* ─── Results ─── */
     #results { background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .results-inner { min-height: 100%; display: flex; flex-direction: column; }
-    /* Full bleed. The capture is exactly the viewfinder's crop, so it is always 3:4 (see
-       .cam-frame): the box is given that shape rather than a height, and the image fills it
-       edge to edge. An inset box reads as a photo sitting on a page; running it to the screen
-       edge makes it the page.
-       Nothing here is measured against viewport height any more, so Safari's URL bar sliding
-       cannot bring back the black bars this replaced — the shape is fixed by the ratio alone.
-       contain STAYS: the file-picker path can hand us an image of any aspect, and cropping a
-       photo someone chose themselves would be worse than bordering it. */
     .photo-wrap {
       position: relative; width: 100%; background: #000; flex-shrink: 0;
       aspect-ratio: 3 / 4;
     }
     #resultPhoto { width: 100%; height: 100%; object-fit: contain; display: block; }
     .scene-badge { position: absolute; bottom: 14px; left: 14px; background: rgba(0,0,0,0.45); color: #fff; padding: 6px 16px; border-radius: 100px; font-size: 14px; font-weight: 600; }
-    /* One horizontal row, deliberately. A grid of eight swatches is a lot of decision for
-       something the app has already made a reasonable choice about — the strip keeps the model's
-       pick one tap away while letting anyone who disagrees browse the rest. */
     .filter-strip {
       display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px 4px;
       scrollbar-width: none; -webkit-overflow-scrolling: touch;
@@ -384,8 +320,6 @@
     .card { background: var(--surface); border-radius: 14px; padding: 18px; box-shadow: var(--card-shadow); }
     .card-title { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
     .card-title .ch { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 10px; }
-    /* One row. Three short tags fit comfortably; anything longer scrolls sideways rather than
-       wrapping, so the card keeps a predictable height. */
     .pills {
       display: flex; flex-wrap: nowrap; gap: 8px; margin-bottom: 12px;
       overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
@@ -396,18 +330,13 @@
     .pill:active { transform: scale(0.95); }
     .copy-all { font-size: 13px; color: var(--accent); font-weight: 500; }
 
-    /* Deliberately the quietest thing on the screen: below the actions, no fill, no accent.
-       A tip jar that shouts is a tip jar people resent. */
+    /* Deliberately the quietest thing on the screen: below the actions, no fill, no accent. */
     .tip-btn {
       background: none; border: none; font-family: inherit; font-size: 13px;
       color: var(--text2); padding: 4px 8px; text-decoration: underline;
       text-underline-offset: 3px;
     }
-    /* A native sheet: the card rises from the bottom edge while the backdrop fades in behind it.
-       Both start from their closed state so there is something to animate FROM — the class is
-       added a frame after `hidden` is cleared, since an element that is display:none cannot
-       transition. The curve is the one iOS uses for its own sheets: fast out of the gate, long
-       settle, no bounce. */
+    /* A native sheet: the card rises from the bottom edge while the backdrop fades in behind it. */
     .sheet {
       position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end;
       background: rgba(0,0,0,0); padding: 0;
@@ -663,8 +592,8 @@
         'cue.perfect': 'Perfect — take the photo',
 
         // Keyed off camera_tilt.direction and placement.reason, so the engine keeps sending its
-        // machine key and the phrasing is chosen here — no round trip to translate a fixed
-        // sentence the client already knows.
+        // machine key and the phrasing is chosen here — no round trip to translate a fixed sentence
+        // the client already knows.
         'tilt.up': 'Empty floor below — aim a little higher',
         'tilt.down': 'Empty space above — aim a little lower',
         'reason.backlight': 'Out of the window glare',
@@ -768,8 +697,6 @@
       },
     };
 
-    // Filter names are English keys in FILTER_CSS and on the wire; only the label shown on the
-    // strip is translated. Missing entries fall back to the key, which is already readable.
     const FILTER_LABELS = {
       zh: {
         'Original': '原图',
@@ -801,21 +728,7 @@
     function tr(key) { return trOr(key, key); }
     function filterLabel(name) { return (FILTER_LABELS[lang] || {})[name] || name; }
 
-    // Warm and cool are a WHITE BALANCE change — red up and blue down, or the reverse — and CSS
-    // filters cannot express one. hue-rotate() leaves neutrals completely untouched, because grey
-    // has no hue to rotate, so the old cool grades tinted nothing at all: a grey wall came out the
-    // same grey. sepia() is the only primitive that tints a neutral, and only ever warm, and it
-    // desaturates while doing it — which is why 'Vivid Warm' read as *less* vivid than 'Vivid'.
-    //
-    // So the tint is a channel gain instead, via the two SVG filters defined below. url() sits in
-    // a CSS filter list quite happily alongside the ordinary functions, and applyFilters handles
-    // the same token when baking, so preview and saved file stay identical.
-    //
-    // Warm is slightly stronger than cool, because warm skin reads as healthy and cool skin reads
-    // as ill. Both land near a ±20 shift on a neutral grey.
     const FILTER_CSS = {
-      // Vivid's three move together, or the warm and cool variants come out louder than the grade
-      // they are variants of.
       'Vivid':         'saturate(1.35) contrast(1.12)',
       'Vivid Warm':    'url(#warmTint) saturate(1.30) contrast(1.1)',
       'Vivid Cool':    'url(#coolTint) saturate(1.25) contrast(1.1) brightness(1.02)',
@@ -826,7 +739,6 @@
       'Noir':          'grayscale(1) contrast(1.45) brightness(0.92)',
     };
 
-    // Both paths read from here, so the preview and the saved pixels can never drift apart.
     const TINT = { '#warmTint': 0.06, '#coolTint': -0.05 };
 
     /* ── State ── */
@@ -853,34 +765,16 @@
     function errMsg(e) { return e.name === 'AbortError' ? tr('err.timeout') : (e.message || tr('err.generic')); }
 
     /* ── Coaching state ──
-       standPos is where the SUBJECT should stand IN FRAME, from analysis.placement, whose x the
-       engine has already snapped to a rule-of-thirds line. It is a composition target, not a point
-       to aim the camera at: panning until it reaches screen-centre would drag the subject to dead
-       centre and throw away the placement the engine solved for. So it is drawn at a fixed spot in
-       frame and deliberately does not move with the phone.
-
-       A two-dot "framing lock" used to live here, tracking drift from the scanned framing via
-       deviceorientation.alpha. Removed, because it could not work: a phone held upright with the
-       rear camera on the horizon sits at beta ~= 90 degrees, the gimbal-lock singularity of the
-       W3C Z-X-Y angle sequence, where alpha and gamma become degenerate. alpha then swings wildly
-       while the phone is nearly still, so the dots jumped and never settled. Not a tuning problem
-       and not a sign error — the sensor cannot separate yaw from roll in exactly the pose this app
-       is used in. Restoring a drift warning needs a different signal: integrating
-       devicemotion.rotationRate over the short scan-to-shoot window. Gravity alone cannot measure
-       yaw at all. The level slider is unaffected — it reads gravity, not orientation. */
+       standPos is where the SUBJECT stands IN FRAME, not a point to aim the camera at. */
     let coachingActive = false;
     // camera_tilt, kept as the engine sent it rather than as a finished sentence: the language can
     // change after the scan, and a pre-resolved string would keep the language it was scanned in.
-    // Phrasing happens per frame in liveLoop, the same way every other cue is handled.
     let tiltDirection = null;      // camera_tilt.direction, once it is something other than "ok"
     let tiltFallback = '';         // camera_tilt.reason, for a direction this client cannot phrase
     let standPos = null;           // {x, y} from analysis.placement — where the subject stands
 
     /* ── Subject detection (MediaPipe pose, lazy-loaded) ──
-       We track the ANKLES, not the body centre: the marker is a footprint, so where someone is
-       standing is a question about their feet. Everything here degrades to null — if the CDN is
-       blocked, the model fails to load, or a frame throws, the app falls back to the static prompt
-       it had before rather than breaking. */
+       Ankles, not the body centre: the marker is a footprint. */
     const tracker = { landmarker: null, loading: false, failed: false };
     const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 
@@ -899,14 +793,10 @@
           runningMode: 'VIDEO',
           numPoses: 1,
           // Defaults are 0.5, which is tuned for "find the person" rather than "is there one".
-          // We are asking the second question, and a false yes turns the marker green with an
-          // empty frame — actively misleading. Raised, at the cost of taking slightly longer to
-          // notice someone who really is there.
           minPoseDetectionConfidence: 0.7,
           minPosePresenceConfidence: 0.7,
           minTrackingConfidence: 0.7,
         });
-        // GPU first, CPU as the fallback — some phones refuse the GPU delegate outright.
         try { tracker.landmarker = await vision.PoseLandmarker.createFromOptions(fileset, opts('GPU')); }
         catch (e) { tracker.landmarker = await vision.PoseLandmarker.createFromOptions(fileset, opts('CPU')); }
       } catch (e) {
@@ -916,23 +806,14 @@
       }
     }
 
-    // Smoothed subject position, in CROP coordinates. Raw per-frame landmarks jitter enough to
-    // make cues flicker, so each reading is eased toward rather than snapped to.
+    // Smoothed subject position, in CROP coordinates.
     const subject = { x: 0.5, y: 0.66, seen: false, lostAt: 0 };
     let lastDetect = 0;
-    // ~10fps detection, so three frames is about a third of a second — long enough to reject a
-    // one-frame flicker, short enough that nobody notices the wait.
+    // ~10fps detection, so three frames is about a third of a second — long enough to reject a one-
+    // frame flicker, short enough that nobody notices the wait.
     const CONFIRM_FRAMES = 3;
     let streak = 0;
 
-    // Detection runs on a downscaled copy, not on the camera frame.
-    //
-    // MediaPipe uploads whatever you hand it as a GPU texture, and 4096 is exactly the maximum
-    // texture size on a great many mobile GPUs — at the full capture size the call does not run
-    // slowly, it throws, and the catch below then hides that detection is not happening at all.
-    //
-    // Landmarks come back normalised, and this scales both axes by the same factor, so the
-    // coordinates are identical to what the full frame would have produced.
     const _det = document.createElement('canvas');
     const DETECT_WIDTH = 480;
 
@@ -945,7 +826,6 @@
 
     function detectSubject(video, ts) {
       if (!tracker.landmarker || !video.videoWidth) return;
-      // ~10fps is plenty for coaching a person who is walking, and leaves the phone alone.
       if (ts - lastDetect < 100) return;
       lastDetect = ts;
 
@@ -953,8 +833,6 @@
       try { res = tracker.landmarker.detectForVideo(detectFrame(video), ts); }
       catch (e) {
         // Once, not every frame: this runs ten times a second and a repeating log is unreadable.
-        // Silent is what cost us this bug — there was no way to tell a model that had found
-        // nobody from one that was failing on every call.
         if (!detectSubject.warned) { detectSubject.warned = true; console.error('pose detection:', e); }
         return;
       }
@@ -973,15 +851,10 @@
       const feet = mid(lm[27], lm[28]) || mid(lm[23], lm[24]) || lm[0];
       if (!feet) return;
 
-      // A pose model is trained to FIND a person, so shown an empty room it will still offer its
-      // best guess. Three independent checks before believing it, because a marker that turns
-      // green with nobody in shot is worse than one that takes an extra moment to notice someone.
       const vis = (i) => (lm[i] && typeof lm[i].visibility === 'number') ? lm[i].visibility : 1;
       const legsSeen = Math.max(vis(27), vis(28), vis(25), vis(26)) > 0.6;
       const torsoSeen = Math.max(vis(11), vis(12)) > 0.6;
       const head = lm[0] || lm[11];
-      // A standing person fills a real slice of the frame. Anything shorter is usually the model
-      // stretching a pose over background clutter.
       const tall = head ? (feet.y - head.y) > 0.20 : false;
 
       if (!(legsSeen && torsoSeen && tall)) {
@@ -991,16 +864,12 @@
         return;
       }
 
-      // Landmarks are normalised to the FULL video frame, but the marker lives in the visible
-      // crop. Converting is not optional: skipping it is the same mistake that put the marker off
-      // screen, just in the other direction.
+      // Landmarks are normalised to the FULL video frame, but the marker lives in the visible crop.
       const c = visibleCrop(video);
       const cx = (feet.x * video.videoWidth - c.sx) / c.sw;
       const cy = (feet.y * video.videoHeight - c.sy) / c.sh;
       if (!isFinite(cx) || !isFinite(cy)) return;
 
-      // Temporal confirmation. A single frame is not evidence — a person-shaped coat stand or a
-      // poster will produce one, and the old code believed it instantly. Real people persist.
       streak += 1;
       if (streak < CONFIRM_FRAMES) return;
 
@@ -1013,17 +882,9 @@
     let standReason = '';          // placement.reason_text — why the engine picked that spot
     let needsStraightening = false;// the scanned frame had a crooked horizon
     let onMarker = false;          // is someone standing on the spot right now
-    // Live roll in degrees, from gravity. Gravity is reliable for roll (unlike the compass, which
-    // is degenerate in this pose — see the note above), so this is what tells us the user has
-    // actually straightened up.
     let liveLean = 0;
 
     /* ── Camera state (idle | loading | tips) ── */
-    // Height is measured rather than listed per state: the placement hint wraps to two lines often
-    // enough that a fixed number would clip the shutter. The pin is only a means of animating, and
-    // must be released afterwards — left in place, overflow:hidden clips whatever arrives later,
-    // and things do arrive later (detectLenses awaits enumerateDevices, so the lens toggle lands
-    // long after the bar was measured).
     let barRelease = null;
     function releaseBar(el) {
       clearTimeout(barRelease);
@@ -1038,33 +899,26 @@
       el.style.height = 'auto';
       const to = el.getBoundingClientRect().height;
       if (!to) { el.style.height = ''; return; }      // not laid out yet — leave it alone
-      // Nothing to animate: the bar is appearing for the first time, or it is already the right
-      // height. Leave it free rather than pinning a value it already has.
       if (!from || Math.abs(to - from) < 1) { el.style.height = ''; return; }
       el.style.height = from + 'px';
       void el.offsetHeight;                            // flush the start value, or there is no
       el.style.height = to + 'px';                     // transition to animate from
       releaseBar(el);
     }
-    // An explicit pixel height goes stale when the screen changes shape. Clearing it returns the
-    // bar to its natural height immediately; the next state change measures again.
+    // An explicit pixel height goes stale when the screen changes shape.
     window.addEventListener('resize', () => { $('camControls').style.height = ''; });
 
-    // How far the frame is currently pushed from where layout puts it. Tracked rather than read
-    // back off the element, because clearing the transform to measure the natural position would
-    // commit that as a style change and the transition would restart from there.
     let frameShift = 0;
 
     // Analysing centres the frame in the screen; everything else leaves it where the flow puts it,
-    // which is the top-middle position the composing and coaching states share. Measured, not
-    // computed from constants: the frame's height depends on dvh and on the device.
+    // which is the top-middle position the composing and coaching states share.
     function placeFrame(centred) {
       const frame = $('camFrame');
       const r = frame.getBoundingClientRect();
       if (!r.height) { return; }                 // not laid out yet — nothing to place
       const natural = r.top - frameShift;
-      // The section is position:fixed inset:0, so its box is the visual viewport — innerHeight
-      // lies on iOS while the URL bar is sliding.
+      // The section is position:fixed inset:0, so its box is the visual viewport — innerHeight lies
+      // on iOS while the URL bar is sliding.
       const screenH = $('camera').getBoundingClientRect().height || r.height;
       frameShift = centred ? Math.max(0, (screenH - r.height) / 2) - natural : 0;
       frame.style.transform = frameShift ? 'translateY(' + Math.round(frameShift) + 'px)' : '';
@@ -1072,10 +926,6 @@
 
     function setCamState(s) {
       // Measured BEFORE the panels change, because this is the height we are animating FROM.
-      // Reading it afterwards only ever worked because an earlier call had pinned an explicit
-      // height — and the window-resize handler below clears that, which iOS triggers every time
-      // the URL bar slides. When it had been cleared, `from` came back equal to `to` and the
-      // move happened in one frame.
       const from = $('camControls').getBoundingClientRect().height;
       $('camIdle').style.display     = s === 'idle' ? 'flex' : 'none';
       $('camLoading').classList.toggle('active', s === 'loading');
@@ -1087,14 +937,8 @@
       updateLensVisibility();
       if (s !== 'tips') resetCoaching();
       // Last: resetCoaching clears the placement hint, which is part of what is being measured.
-      //
-      // Analysing holds the bar where it is instead of measuring: its contents are behind the
-      // scrim, so letting it collapse would animate the frame out and back for no visible reason,
-      // either side of a network wait. It holds the pin for the whole scan, cancelling any
-      // pending release.
       if (s === 'loading') { clearTimeout(barRelease); if (from) $('camControls').style.height = from + 'px'; }
       else resizeControls(from);
-      // After the bar, so the natural position this measures is the one the frame is settling to.
       placeFrame(s === 'loading');
     }
 
@@ -1105,9 +949,6 @@
         $('video').srcObject = stream;
         $('videoBackdrop').srcObject = stream;   // same stream, so they can never disagree
         hasCamera = true;
-        // show() BEFORE setCamState. setCamState ends in resizeControls, and a measurement taken
-        // while the screen is still display:none comes back 0, leaving the bar at `auto` with no
-        // height for the next state change to animate from.
         show('camera');
         setCamState('idle');
         detectLenses();
@@ -1120,24 +961,13 @@
       }
     }
 
-    // Coming back to the viewfinder from the results screen. The stream is never detached, but
-    // that is not enough on its own: a <video> inside a display:none screen is suspended, and
-    // autoplay does not re-fire when it is shown again — the element stays paused, videoWidth
-    // stays 0, and liveLoop returns on its first line every frame. The viewfinder simply never
-    // starts, with nothing logged.
-    //
-    // The "sometimes" is the second half: if the page loses visibility while the camera screen is
-    // hidden, iOS releases the camera track outright. readyState goes to "ended" and it never
-    // recovers by itself, so playing the element again achieves nothing and the only fix is to
-    // ask for the camera a second time.
     async function resumeCamera() {
       const live = !!stream && stream.getVideoTracks().some(t => t.readyState === 'live');
       if (!live) { await startCamera(); return 'reacquired'; }
       for (const id of ['video', 'videoBackdrop']) {
         const v = $(id);
         if (v.srcObject !== stream) v.srcObject = stream;
-        // play() rejects if the element is not ready yet. There is nothing useful to do about
-        // that here, but an unhandled rejection surfaces as a page error, so it is swallowed.
+        // play() rejects if the element is not ready yet.
         try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not ready */ }
       }
       return 'resumed';
@@ -1182,12 +1012,6 @@
       el.classList.add('show');
     }
 
-    // Standing marker: a footprint at the engine's placement point with a dotted body box above
-    // it, drawn at a FIXED spot in frame. This is the composition — it does not move with the
-    // phone, because the subject is meant to stand on the thirds line of the shot you scanned.
-    // Coordinates come back from the engine relative to the SCANNED image, which is now exactly
-    // the visible crop — so normalised coords map straight onto the overlay canvas. No cover
-    // transform here on purpose: applying one would re-introduce the off-screen marker.
     function drawStandMarker(W, H, ctx, x, y, green, label) {
       const fx = x * W, fy = y * H;
       const rw = 0.09 * H, rh = 0.028 * H, hw = rw * 0.9, boxH = 0.72 * H;
@@ -1204,8 +1028,6 @@
       ctx.stroke();
       ctx.restore();
 
-      // The reason the engine chose this spot, under the footprint. Clamped horizontally so a
-      // marker near the frame edge does not push its own caption off screen.
       if (label) {
         ctx.save();
         ctx.font = '600 ' + Math.max(12, Math.round(H * 0.021)) + 'px Georgia, "Noto Serif SC", serif';
@@ -1216,9 +1038,8 @@
         const halfText = ctx.measureText(label).width / 2 + 10;
         const lx = Math.min(W - halfText, Math.max(halfText, fx));
 
-        // The cue pill sits at the bottom of the viewfinder and is roughly 37px tall, so a
-        // caption below this line is hidden behind it. Flip it above the footprint rather than
-        // let it hide. Named so the test can read the same number instead of restating it.
+        // The cue pill sits at the bottom of the viewfinder and is roughly 37px tall, so a caption
+        // below this line is hidden behind it.
         const font = Math.max(12, Math.round(H * 0.021));
         const cueTop = H - CUE_RESERVED_PX;
         if (fy + rh + 10 + font <= cueTop) {
@@ -1254,9 +1075,8 @@
     function startLive() { if (liveActive) return; liveActive = true; liveLoop(performance.now()); }
     function resetCoaching() {
       coachingActive = false; standPos = null; standReason = '';
-      // Stale advice is worse than none: without this, a failed rescan leaves the PREVIOUS
-      // scene's instruction sitting above the shutter, describing a scene you have walked away
-      // from.
+      // Stale advice is worse than none: without this, a failed rescan leaves the PREVIOUS scene's
+      // instruction sitting above the shutter, describing a scene you have walked away from.
       const hint = $('placeHint'); if (hint) hint.textContent = '';
       subject.seen = false; subject.lostAt = 0; onMarker = false; streak = 0;
       tiltDirection = null; tiltFallback = ''; needsStraightening = false;
@@ -1269,8 +1089,6 @@
       $('statusChip').classList.remove('show');
       resetCoaching();
     }
-    // ts: requestAnimationFrame passes a timestamp. It must be named here — detectSubject
-    // throttles and smooths against it, and reading an undeclared `ts` threw every frame.
     function liveLoop(ts) {
       if (!liveActive) return;
       liveRAF = requestAnimationFrame(liveLoop);
@@ -1292,10 +1110,7 @@
       }
 
       // ── coaching overlay: subject first, then position, then the camera ──
-      // Wrapped because this block both draws AND drives the cue text. A single runtime error in
-      // the drawing half used to escape the whole block, so setCue never ran and every cue froze
-      // on whatever the HTML shipped with — silently, and only on a real device. Cues are the
-      // product here; they must survive a bad frame.
+      // Wrapped: one throw in the drawing half used to take setCue with it, freezing every cue.
       try {
       if (coachingActive && standPos) {
         detectSubject(video, ts);
@@ -1305,12 +1120,7 @@
         const dx = subject.x - standPos.x;
         const dy = subject.y - standPos.y;
         const limit = onMarker ? 0.13 : 0.09;
-        // Asymmetric, because the frame is. With the marker's feet near 0.88 there is only ~0.12
-        // of picture below it and 0.88 above, so one tolerance both ways makes "send them back"
-        // unreachable — it would need feet past the bottom edge. Someone who IS too close runs
-        // out of frame quickly, so a smaller number catches them before the tracker loses their
-        // legs altogether. The slack is the same hysteresis the horizontal check uses: it takes
-        // less to stay on the marker than to get there.
+        // Asymmetric, because the frame is.
         const slack = onMarker ? 0.04 : 0;
         const tooFar = dy <= -(0.12 + slack);     // feet HIGHER in frame = further away
         const tooNear = dy >= (0.06 + slack);     // feet LOWER in frame = closer to the camera
@@ -1320,23 +1130,18 @@
         // again.
         if (needsStraightening && Math.abs(liveLean) <= 3) needsStraightening = false;
 
-        // Green only once someone is actually standing on it. Orange the rest of the time, so the
-        // marker reads as "not yet" at a glance rather than needing to be read.
         drawStandMarker(tf.W, tf.H, ctx, standPos.x, standPos.y, onMarker, standReason);
         $('camLevel').classList.toggle('needs-fix', onMarker && needsStraightening);
 
-        // One cue at a time, in the order the work actually happens: get someone in shot, get
-        // them on the spot, then fine-tune the camera. Camera tweaks come last because they are
-        // quick, and because there is no point levelling a frame nobody is standing in.
+        // One cue at a time, in the order the work actually happens: get someone in shot, get them
+        // on the spot, then fine-tune the camera.
         if (tracker.failed || !tracker.landmarker) {
-          // No detection available — fall back to the static prompt rather than guessing.
           setCue(tracker.failed ? tr('cue.stand') : tr('cue.ready'));
         } else if (!subject.seen) {
           setCue(tr('cue.inFrame'));
         } else if (Math.abs(dx) >= limit) {
           // "them", not "you": the reader is holding the phone, and everything they are told to do
-          // themselves (straighten, aim) is phrased that way too. Left/right are the READER's, i.e.
-          // what is on screen — a subject told to "move left" would go the opposite way.
+          // themselves (straighten, aim) is phrased that way too.
           setCue(dx > 0 ? tr('cue.left') : tr('cue.right'));
         } else if (tooFar || tooNear) {
           // Feet higher in frame than the marker means further away, and vice versa.
@@ -1359,15 +1164,6 @@
     function closeGate() { $('gateBlock').classList.remove('show'); setCamState('idle'); }
 
     /* ── Frame grabbing ── */
-    // The <video> is displayed with object-fit: cover, so the viewfinder shows only a CENTRE CROP
-    // of the camera track. Everything downstream has to agree with that crop, or the app is
-    // reasoning about a picture nobody can see.
-    //
-    // This was a real bug, not a nicety. The scan used to send the whole track: with a landscape
-    // 1920x1080 track on a portrait phone only ~26% of the analysed width was on screen, so
-    // placement x=0.667 was computed from scenery outside the frame and drawn hundreds of pixels
-    // off the right edge — invisible, along with its caption. The saved photo had the same
-    // mismatch: you framed a crop and got the whole sensor.
     function visibleCrop(video) {
       const boxW = video.clientWidth || window.innerWidth;
       const boxH = video.clientHeight || window.innerHeight;
@@ -1386,39 +1182,22 @@
       cv.getContext('2d').drawImage(v, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
       return new Promise(r => cv.toBlob(b => r(b), 'image/jpeg', 0.7));
     }
-    // Deliberately NOT using ImageCapture.takePhoto(). It promises a full-sensor still, but on
-    // real devices it fires the hardware capture — a visible dark flash — and hands back a black
-    // frame often enough to be useless. A canvas grab of the live track is boring and always
-    // works, and with the track now asking for everything the sensor has, the difference between
-    // the two is much smaller than it was.
-    //
-    // Where the pixels actually went: the viewfinder is 3:4 and the track is 4:3, so the crop the
-    // user framed is the middle 56% of the track's width. At the old 1920x1440 that left
-    // 1080x1440 — 1.6MP, which is what a saved photo was really worth. The crop cannot change
-    // without changing what the app shows, so the only lever is asking for a bigger track.
+    // Deliberately NOT using ImageCapture.takePhoto().
     async function grabKeeperURL() {
       const v = $('video'); if (!v.videoWidth) return null;
       const c = visibleCrop(v);                        // same crop the user framed
       // 5000 is above the largest mode any phone will hand back for a video track, so this no
-      // longer binds — it is a guard against an absurd sensor, not a resolution policy. It used
-      // to be 2560, which was itself above the old request, so nothing was ever being downscaled
-      // — the ceiling was always the getUserMedia constraint.
+      // longer binds — it is a guard against an absurd sensor, not a resolution policy.
       const [w, h] = scaledSize(c.sw, c.sh, 5000);
       const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
       cv.getContext('2d').drawImage(v, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
-      // A blob, not a data URL. Base64 costs a third more again in memory, and at 7MP that is
-      // several megabytes of string held alive by two <img> src attributes on a phone.
       return new Promise(r => cv.toBlob(b => r(b ? URL.createObjectURL(b) : null), 'image/jpeg', 0.95));
     }
     let capturedURL = null;
     function loadCaptured(url) {
-      // Release the previous shot's blob. Retake and scan-again both come back through here, so
-      // without this every photo taken in a session stays in memory until the tab closes.
       if (capturedURL && capturedURL.startsWith('blob:')) URL.revokeObjectURL(capturedURL);
       capturedURL = url;
       capturedImg = new Image();
-      // No aspect juggling needed any more: the box is a fixed two thirds of the screen and
-      // `contain` fits the whole photo inside it, so nothing is ever cropped out of the preview.
       capturedImg.src = url;
       $('resultPhoto').src = url;
     }
@@ -1444,7 +1223,6 @@
       setCamState('loading');
       try {
         analysisResult = await postAnalyze(blob);
-        // capture gate: block on poor light or a blurry frame — force a rescan
         if (analysisResult.lighting && analysisResult.lighting.quality === 'Poor') { openGate(tr('gate.light')); return; }
         if (analysisResult.blurry) { openGate(tr('gate.blur')); return; }
         beginCoaching(analysisResult);
@@ -1454,28 +1232,25 @@
       }
     }
 
-    // Everything needed to coach from one analysis. Called by a fresh scan and by Retake, so the
-    // two can never drift into subtly different states.
     function beginCoaching(r) {
       renderTips(r);
 
-      // Where the subject should stand; fall back to a plain rule-of-thirds point.
-      // != null, not truthiness: a legitimate 0 coordinate must not fall through to the default.
+      // Where the subject should stand; fall back to a plain rule-of-thirds point. != null, not
+      // truthiness: a legitimate 0 coordinate must not fall through to the default.
       const p = r.placement;
       standPos = (p && p.x != null && p.y != null) ? { x: p.x, y: p.y } : { x: 1/3, y: 0.88 };
       standReason = (p && p.reason) ? trOr('reason.' + p.reason, p.reason_text || '')
                                     : ((p && p.reason_text) || '');
 
       // camera_tilt is advisory: only cue when the engine actually found dead space AND gave
-      // wording for it. Older responses have neither.
+      // wording for it.
       const tilt = r.camera_tilt;
       const hasTilt = !!(tilt && tilt.direction && tilt.direction !== 'ok' && tilt.reason);
       tiltDirection = hasTilt ? tilt.direction : null;
       tiltFallback = hasTilt ? tilt.reason : '';
 
-      // composition.horizon describes the SCANNED frame, not the phone right now — so it only
-      // opens the prompt. The live gravity reading decides when it is satisfied. Without a roll
-      // reading we cannot tell when it has been fixed, so never open a cue we could not close.
+      // composition.horizon describes the SCANNED frame, not the phone right now — so it only opens
+      // the prompt.
       const horizon = (r.composition || {}).horizon;
       needsStraightening = motionGranted && !!horizon && horizon !== 'Level';
 
@@ -1485,8 +1260,6 @@
       setCamState('tips');
     }
 
-    // Another shot of the same setup. The scene has not changed, so re-analysing it would cost a
-    // wait and two OpenAI calls to place the marker in exactly the same spot.
     async function retake() {
       if (!analysisResult) return;
       show('camera');
@@ -1500,8 +1273,7 @@
     function renderTips(r) {
       $('sceneBadgeTop').textContent = r.scene_type || tr('res.scene');
       // Depth is the thing a flat marker cannot show: it says WHERE across the frame but nothing
-      // about how far into the scene to stand. This is the model's job — it is the only part of
-      // the system that knows there is a doorway or a bench to stand in front of.
+      // about how far into the scene to stand.
       $('placeHint').textContent = r.placement_hint || '';
     }
 
@@ -1597,7 +1369,7 @@
 
     /* ── Save / share ── */
     // Bakes the chosen filter into the pixels, because CSS filters are a preview only — the file
-    // itself has to carry them. Nothing else is added: the photo people save is their photo.
+    // itself has to carry them.
     function bakeBlob() {
       return new Promise(resolve => {
         const cv = document.createElement('canvas');
@@ -1612,16 +1384,10 @@
         cv.toBlob(b => resolve(b), 'image/jpeg', 0.95);
       });
     }
-    // Share and Save are two different things now. Save used to call navigator.share() as well,
-    // just without the hashtags, so both buttons opened the same sheet and the second one looked
-    // broken. Save writes the file straight out; only Share asks the OS anything.
     function filename() {
       // Dated, because a folder full of daka.jpg, daka(1).jpg is nobody's idea of a keeper — but
-      // spaced and punctuated like a screenshot rather than run together as digits, which read as
-      // a serial number. Still sorts chronologically.
-      //
-      // Only Files and desktop downloads ever see this. Saving through the sheet to Photos hands
-      // the name to iOS, which discards it and assigns its own.
+      // spaced and punctuated like a screenshot rather than run together as digits, which read as a
+      // serial number.
       const d = new Date(), p = (n) => String(n).padStart(2, '0');
       const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
       // Dots, not colons: a colon is illegal in a filename on every platform that matters.
@@ -1631,37 +1397,21 @@
 
     const canShareFile = (file) => !!(navigator.canShare && navigator.canShare({ files: [file] }));
 
-    // The photo goes alone. Attaching `text` as well makes iOS treat the text as the item being
-    // shared: the sheet falls back to a generic file placeholder instead of the picture, and some
-    // targets take the words and drop the image entirely. Sharing a photo should look like sharing
-    // a photo.
-    //
-    // The hashtags are not lost — they go to the clipboard as the sheet opens, which is one paste
-    // into the caption field wherever the photo lands. Same helper the pills use.
     async function sharePhoto() {
       if (!capturedImg) return;
       const blob = await bakeBlob();
       const tags = (analysisResult && analysisResult.hashtags || []).join(' ');
       const file = new File([blob], filename(), { type: 'image/jpeg' });
       if (canShareFile(file)) {
-        // Before share(), not after: the clipboard write needs the user gesture that is still
-        // live here, and awaiting share() first spends it on the sheet.
+        // Before share(), not after: the clipboard write needs the user gesture that is still live
+        // here, and awaiting share() first spends it on the sheet.
         if (tags) await copyText(tags, tr('toast.tagsCopied'));
         try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
       }
       downloadPhoto(blob);   // no share support (most desktops) — saving is the useful thing left
     }
 
-    // No web page can write to the camera roll on either mobile OS. There is no API for it: the
-    // system sheet's "Save Image" / "Save to Photos" is the only route, and a download attribute
-    // on a phone either lands in Files, lands in Downloads where the gallery never indexes it, or
-    // on iOS opens the blob in the tab and saves nothing at all. It also reports no failure, which
-    // is how this managed to toast "Saved" while saving nothing.
-    //
-    // So on a phone, Save opens the sheet. What separates it from Share is what goes in: Save
-    // attaches the file alone, which puts "Save Image" first; Share attaches the hashtags too,
-    // which is what you want when the destination is an app. One is for keeping, one for posting.
-    // Base64 for the native bridge, which cannot take a Blob.
+    // No web page can write to the camera roll on either mobile OS.
     function blobToBase64(blob) {
       return new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -1677,9 +1427,6 @@
       const blob = await bakeBlob();
 
       // Inside the native shell, Save means save: straight to the camera roll, one tap, no sheet.
-      // On the web this is impossible — no browser API reaches Photos — which is why the sheet
-      // exists at all. If the native write fails or permission is refused we fall through to it
-      // rather than leaving the button looking broken.
       const sp = savePlugin();
       if (sp && sp.save) {
         try {
@@ -1724,10 +1471,7 @@
       finally { $('camLoading').classList.remove('active'); }
     });
 
-    /* ── Light / dark ──
-       The page followed prefers-color-scheme and offered no way out of it. Auto stays the default
-       — nothing is stamped until someone picks — but a choice sticks, because the phone's setting
-       is about the phone and this is a camera app you might want dark at noon. */
+    /* ── Light / dark ── */
     const THEMES = ['light', 'dark'];
     let theme = (() => {
       try {
@@ -1750,8 +1494,7 @@
       document.querySelectorAll('.theme-opt').forEach(
         o => o.classList.toggle('on', o.dataset.themeChoice === theme));
       // The two theme-color metas are media-scoped, so they answer to the OS rather than to this
-      // choice. Once a choice exists they have to be replaced by a single unconditional one, or
-      // the browser chrome stays the colour of the theme the user just left.
+      // choice.
       if (theme) {
         document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => {
           m.removeAttribute('media');
@@ -1775,8 +1518,8 @@
       document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
       document.querySelectorAll('.lang-opt').forEach(
         o => o.classList.toggle('on', o.dataset.lang === lang));
-      // The filter strip is built once per photo, so it needs rebuilding by hand — unlike the
-      // cue, which is rewritten on the next frame anyway.
+      // The filter strip is built once per photo, so it needs rebuilding by hand — unlike the cue,
+      // which is rewritten on the next frame anyway.
       if (capturedImg) { buildFilterStrip((analysisResult || {}).filter); updateFilterUI(); }
     }
     document.querySelectorAll('.lang-opt').forEach(
@@ -1784,31 +1527,11 @@
     applyLang();
 
     /* ── Wire up ── */
-    /* ── Tip jar (native only) ──────────────────────────────────────────────────
-       The app is free, has no ads, and costs real money to run: every scan is two OpenAI calls.
-       A tip jar is the honest way to ask, and the only monetisation that does not change what the
-       product is — nothing is withheld, no scan is gated, and the button lives AFTER the photo, so
-       it is only ever seen by someone the app has already helped.
-
-       This is native-only by necessity. In-app purchase is a store transaction; a web page cannot
-       make one, which is the same wall the camera roll runs into. On dakaba.pages.dev the button
-       stays hidden and none of this runs.
-
-       No bundler, deliberately — the page still has no build step. Capacitor's native bridge
-       exposes registered plugins on window.Capacitor.Plugins by name, so the RevenueCat SDK is
-       reachable without importing the npm package or compiling anything.
-
-       The key below is a PUBLIC SDK key. Unlike OPENAI_API_KEY, these are designed to ship inside
-       client binaries and cannot spend money or read another account — RevenueCat's secret keys
-       are a separate thing and must never appear here. A key starting `test_` is a Test Store key,
-       which runs the whole purchase flow without App Store Connect. */
+    /* ── Tip jar (native only) ──
+       Nothing is gated. Every scan costs two OpenAI calls, and the tip is the only ask. */
     // A RevenueCat Test Store key: it runs the whole purchase flow — offerings, paywall,
     // entitlements — without App Store Connect or a paid developer account, which is what makes a
     // working tip jar demonstrable at all before a store release exists.
-    //
-    // SWAP THIS BEFORE ANY STORE RELEASE. A `test_` key transacts nothing real; shipping it would
-    // mean an App Store build whose tip jar silently takes no money. The replacement is the
-    // platform key from RevenueCat (`appl_…` for iOS).
     let RC_API_KEY = 'test_yIDmpHCJqdCeflZkqQMdrPyMdsy';
 
     const native = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -1818,13 +1541,7 @@
     let tipOffering = null;
     let tipPackage = null;      // the one we actually sell: product "tip", else the lifetime package
 
-    // The tip is a one-off, so it is a lifetime package in RevenueCat's model. Matching the
-    // product identifier first means the dashboard can rename the package without breaking this;
-    // falling back to `lifetime` means a default offering still works before anyone has.
-    //
-    // Nothing here reads an entitlement. The app is free: there is no dakaba_pro, no gate, and no
-    // branch anywhere that asks whether you have paid. Tipping changes nothing except that we can
-    // say thank you.
+    // The tip is a one-off, so it is a lifetime package in RevenueCat's model.
     function pickTipPackage(pkgs) {
       const byProduct = pkgs.find(p => p.product && p.product.identifier === 'tip');
       if (byProduct) return byProduct;
@@ -1832,23 +1549,18 @@
       return lifetime || pkgs[0] || null;
     }
 
-    // Never throws and never blocks the app. A tip jar that breaks the camera would be a poor
-    // trade, so every failure path here ends with the button simply staying hidden.
     async function initTipJar() {
       const rc = rcPlugin();
       if (!native() || !rc || !RC_API_KEY) return;
       try {
         await rc.configure({ apiKey: RC_API_KEY });
         const { current } = await rc.getOfferings();
-        // Only show the button once RevenueCat has answered with something buyable. Offering a
-        // tip that cannot be completed is worse than not asking.
+        // Only show the button once RevenueCat has answered with something buyable.
         tipPackages = (current && current.availablePackages) || [];
         tipOffering = current || null;
         tipPackage = pickTipPackage(tipPackages);
         if (tipPackage) $('tipBtn').hidden = false;
 
-        // Display only. It exists so a returning supporter gets acknowledged, and for nothing
-        // else — no entitlement is read and no behaviour changes on the strength of it.
         if (rc.addCustomerInfoUpdateListener) {
           rc.addCustomerInfoUpdateListener((info) => {
             const bought = info && info.customerInfo
@@ -1864,14 +1576,7 @@
 
     // RevenueCat's own paywall first, our sheet second. presentPaywall returns NOT_PRESENTED
     // whenever no paywall has been designed in the dashboard — which is the state this project is
-    // in until someone builds one, and may stay the state on a Test Store offering. Treating that
-    // as a failure would leave the button dead, so it falls through to the sheet below, which is
-    // built from the same offering and needs nothing configured.
-    // Does this offering actually carry a paywall? RevenueCat only attaches one when somebody has
-    // designed it in the dashboard, and presentPaywall on an offering without one does not return
-    // NOT_PRESENTED as you would hope — it never settles at all, so an `await` on it hangs and the
-    // fallback below is never reached. Tapping the button did nothing, on a device, silently.
-    // Asking first is deterministic; waiting on a promise that has no reason to resolve is not.
+    // in until someone builds one, and may stay the state on a Test Store offering.
     const hasPaywall = (o) => !!(o && (o.paywall || o.paywallComponents));
 
     async function openTip() {
@@ -1882,7 +1587,6 @@
           const result = (res && res.result) || res;
           if (result === 'PURCHASED' || result === 'RESTORED') { toast(tr('tip.thanks')); return; }
           if (result === 'CANCELLED') return;          // a choice, not a fault — say nothing
-          // NOT_PRESENTED and ERROR both fall through.
         } catch (e) {
           console.warn('paywall unavailable, falling back to the sheet:', e);
         }
@@ -1906,17 +1610,12 @@
       }
       const sheet = $('tipSheet');
       sheet.hidden = false;
-      // A frame between un-hiding and opening, or there is no start state to transition from:
-      // an element going display:none -> flex -> transformed in one task simply appears in place.
-      // Same flush the controls bar needs for its height.
+      // A frame between un-hiding and opening, or there is no start state to transition from: an
+      // element going display:none -> flex -> transformed in one task simply appears in place.
       void sheet.offsetHeight;
       sheet.classList.add('open');
     }
 
-    // Closing runs the animation and only then hides, so the card slides out instead of vanishing.
-    // On a timer rather than transitionend, because reduced motion removes the transition
-    // altogether and the event would never fire — leaving the sheet permanently on screen for the
-    // people least able to dismiss it comfortably.
     let sheetClosing = null;
     function closeTipSheet() {
       const sheet = $('tipSheet');
@@ -1951,9 +1650,6 @@
     $('retakeBtn').addEventListener('click', retake);
     $('tipBtn').addEventListener('click', openTip);
     $('tipClose').addEventListener('click', closeTipSheet);
-    // Tap-out. Compared by id rather than identity because the target must be the backdrop itself
-    // — a tap that lands on the card bubbles up here too, and closing on that would make the sheet
-    // impossible to use.
     $('tipSheet').addEventListener('click', (e) => {
       if (e && e.target && e.target.id === 'tipSheet') closeTipSheet();
     });
@@ -1977,13 +1673,10 @@
       const wrap = $('camLevel'), line = $('camLevelLine'); if (!wrap || !line) return;
 
       // ROLL, and only roll: rotation about the axis the lens points down, which is the one thing
-      // that tilts the horizon in the picture. Pitch — aiming up or down — must not touch it, or
-      // the app contradicts its own camera_tilt cue, which asks the user to aim lower.
+      // that tilts the horizon in the picture.
       const planar = Math.hypot(x, y);
       // Near flat, face up or down, almost no gravity is left in the screen plane and roll is two
-      // noisy numbers handed to atan2 — it swings wildly and can read a confident 0. Show nothing
-      // rather than claim level, and leave liveLean alone so a phone on a table cannot satisfy the
-      // straighten cue's latch.
+      // noisy numbers handed to atan2 — it swings wildly and can read a confident 0.
       if (planar / g < 0.2) {
         wrap.classList.remove('level');
         line.style.opacity = '0';
@@ -1991,18 +1684,9 @@
       }
       line.style.opacity = '1';
       const roll = Math.atan2(-x, y) * 180 / Math.PI;   // + = phone rotated clockwise for the user
-      // iOS reports accelerationIncludingGravity with the opposite sign to everyone else — a phone
-      // face-up on a table reads z = -9.8 there and +9.8 on Android — which shifts this angle by
-      // exactly 180 degrees. A LINE HAS NO ENDS: drawn at t or t+180 it looks identical, so folding
-      // the angle into (-90, 90] makes the whole platform question disappear. No user-agent
-      // sniffing, and nothing to get wrong on a device nobody here can test on.
-      //
-      // (Detecting iOS by DeviceMotionEvent.requestPermission does not work, incidentally —
-      // Chromium defines it too, so that test reports iOS on a Windows desktop.)
       const lean = ((roll + 90) % 180 + 180) % 180 - 90;
       liveLean = lean;
-      // The horizon turns the opposite way to the phone, so the line lies at -lean. Get this
-      // backwards and the line mirrors the real horizon instead of lying along it.
+      // The horizon turns the opposite way to the phone, so the line lies at -lean.
       line.style.transform = 'rotate(' + (-lean).toFixed(1) + 'deg)';
       // The same 3-degree band the straighten cue clears at, so the line goes green exactly when
       // the cue goes away instead of a moment either side of it.
@@ -2011,8 +1695,7 @@
 
     // Asked from the start tap, and BEFORE getUserMedia — that ordering is the whole fix. iOS
     // grants one permission prompt per user gesture, so when the camera prompt went first the
-    // motion prompt was silently dropped and never appeared at all. Without it there is no roll
-    // reading, which is why the straighten cue never fired.
+    // motion prompt was silently dropped and never appeared at all.
     async function requestMotion() {
       const DME = window.DeviceMotionEvent;
       if (!DME) return;
