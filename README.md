@@ -256,11 +256,6 @@ density hits zero, and the "too plain to judge" escape hatch passes the frame �
 destroyed image are indistinguishable by edge density alone. Probably narrower on real broadband
 scenes than on synthetic tests. Characterised in `test_features.py`.
 
-**One bit of dead-but-harmless code**, found by mutation testing and documented in the tests: the
-`if not content` guard in `_analyze_with_gpt` is redundant with the parse guard below it. (The `y`
-clamp in `_compute_placement` used to be listed here too — it became reachable in `0.17`, when the
-band moved down to `0.84`–`0.90` and left real room on both sides of it.)
-
 **Generated but never displayed:** `lighting.tip`, `composition` and `blueprint.notes`. All free
 (pure OpenCV, no tokens). `composition.horizon` and `blueprint.notes` speak directly to framing, so
 they're the most natural things to surface next.

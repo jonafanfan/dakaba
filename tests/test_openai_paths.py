@@ -250,7 +250,7 @@ def test_the_hashtag_line_names_the_language_itself(monkeypatch, lang, expected)
     """
     client = install(FakeClient(completion=completion("{}")), monkeypatch)
     _analyze_with_gpt("Zm9v", lang=lang)
-    bullet = next(l for l in prompt_text(client).splitlines() if '"hashtags"' in l)
+    bullet = next(ln for ln in prompt_text(client).splitlines() if '"hashtags"' in ln)
     assert expected in bullet
 
 

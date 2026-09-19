@@ -7,9 +7,8 @@ import numpy as np
 from PIL import Image
 from openai import OpenAI
 
-# Both OpenAI calls degrade rather than fail the scan, which means an outage is otherwise
-# completely invisible: a bad completion and a dead API produce the same empty result. Log at
-# warning so "why is every scene Unknown?" is answerable from the Render logs.
+# Both OpenAI calls degrade rather than fail the scan, so an outage is otherwise invisible: a bad
+# completion and a dead API produce the same empty result. Logged so it can be told apart.
 logger = logging.getLogger("daka.engine")
 
 _openai_client = None
@@ -77,9 +76,9 @@ def _compute_placement(gray, saliency_map) -> dict:
     to {2/3, 0.88}.
 
     `reason` names the signal that actually decided the side, so the client can explain the marker
-    rather than showing an unexplained dot. The work was already being done and thrown away.
+    rather than showing an unexplained dot.
     """
-    FALLBACK = {
+    fallback = {
         "x": round(2 / 3, 3), "y": 0.88,
         "reason": "default", "reason_text": PLACEMENT_REASONS["default"],
     }
@@ -87,9 +86,9 @@ def _compute_placement(gray, saliency_map) -> dict:
         sal = np.asarray(saliency_map, dtype=np.float32)
         g = np.asarray(gray, dtype=np.float32)
         if sal.ndim != 2 or g.ndim != 2 or sal.size == 0:
-            return FALLBACK
-        H, W = sal.shape
-        X_LEFT, X_RIGHT = 1 / 3, 2 / 3
+            return fallback
+        h, w = sal.shape
+        x_left, x_right = 1 / 3, 2 / 3
 
         # Only trust a signal when it's meaningful for THIS scene (avoids deciding on noise).
         saliency_reliable = sal.std() > 0.010 and (float(sal.max()) - float(sal.min())) > 0.05
@@ -103,21 +102,21 @@ def _compute_placement(gray, saliency_map) -> dict:
             # Balance: stand opposite the scene's horizontal focal centre of mass.
             col = sal.sum(axis=0)
             tot = float(col.sum())
-            cx = (float((np.arange(W) * col).sum() / tot) / W) if tot > 1e-6 else 0.5
+            cx = (float((np.arange(w) * col).sum() / tot) / w) if tot > 1e-6 else 0.5
             contributions["balance"] = 1.0 if cx < 0.5 else -1.0
             # Cleanliness: prefer the side whose body-band background is emptier.
-            top = int(H * 0.30)
+            top = int(h * 0.30)
 
             def _clutter(nx):
-                c = int(nx * W)
-                return float(sal[top:, max(0, c - W // 6):min(W, c + W // 6)].mean())
+                c = int(nx * w)
+                return float(sal[top:, max(0, c - w // 6):min(w, c + w // 6)].mean())
 
-            contributions["clean_background"] = 1.0 if _clutter(X_RIGHT) < _clutter(X_LEFT) else -1.0
+            contributions["clean_background"] = 1.0 if _clutter(x_right) < _clutter(x_left) else -1.0
 
         if light_reliable:
             # Light: stand on the DIMMER side so the brighter side lights the face.
-            lb = float(g[:, :W // 2].mean())
-            rb = float(g[:, W // 2:].mean())
+            lb = float(g[:, :w // 2].mean())
+            rb = float(g[:, w // 2:].mean())
             if abs(rb - lb) / (lb + rb + 1e-6) > 0.04:
                 contributions["light"] = 1.2 if lb > rb else -1.2
 
@@ -125,14 +124,14 @@ def _compute_placement(gray, saliency_map) -> dict:
 
         # Backlight veto: a blown-out half silhouettes the subject -> forbid standing there.
         hot = g > 245
-        lhot = float(hot[:, :W // 2].mean())
-        rhot = float(hot[:, W // 2:].mean())
-        HOT = 0.06
+        lhot = float(hot[:, :w // 2].mean())
+        rhot = float(hot[:, w // 2:].mean())
+        hot_floor = 0.06
         reason = None
-        if rhot > HOT and rhot > lhot * 1.5:
+        if rhot > hot_floor and rhot > lhot * 1.5:
             right = False
             reason = "backlight"
-        elif lhot > HOT and lhot > rhot * 1.5:
+        elif lhot > hot_floor and lhot > rhot * 1.5:
             right = True
             reason = "backlight"
         elif votes > 0.15:
@@ -141,7 +140,7 @@ def _compute_placement(gray, saliency_map) -> dict:
             right = False
         else:
             right = not (rhot > lhot)   # no confident signal: avoid the hotter half; tie -> right
-        x = X_RIGHT if right else X_LEFT
+        x = x_right if right else x_left
 
         if reason is None:
             # Credit the strongest signal that actually pointed the way we went. A signal that
@@ -149,19 +148,16 @@ def _compute_placement(gray, saliency_map) -> dict:
             agreeing = {k: abs(v) for k, v in contributions.items() if v != 0 and (v > 0) == right}
             reason = max(agreeing, key=agreeing.get) if agreeing else "default"
 
-        # Where the FEET go, measured from the top. This band was 0.62-0.70, which asked for a
-        # standing person whose feet sat two thirds up the picture and left the bottom third as
-        # bare ground — and, because the client compares a tracked ankle against this number, it
-        # told anyone standing at a natural distance to keep walking backwards. A full-body frame
-        # puts the feet near the bottom with a little floor beneath them, so the band moves there.
-        # The spread stays the same shape: lower when the top of the frame is busy, higher when
+        # Where the FEET go, measured from the top: near the bottom, as in a full-body frame.
+        # The client compares a tracked ankle against this, so raising it tells someone standing at
+        # a natural distance to walk backwards. Lower when the top of the frame is busy, higher when
         # there is foreground to stand clear of.
         y = 0.88
         if saliency_reliable:
             m = float(sal.mean()) + 1e-6
-            if float(sal[:H // 3].mean()) > 1.6 * m:
+            if float(sal[:h // 3].mean()) > 1.6 * m:
                 y = 0.90
-            elif float(sal[2 * H // 3:].mean()) > 1.8 * m:
+            elif float(sal[2 * h // 3:].mean()) > 1.8 * m:
                 y = 0.84
         return {
             "x": round(float(x), 3),
@@ -170,7 +166,7 @@ def _compute_placement(gray, saliency_map) -> dict:
             "reason_text": PLACEMENT_REASONS[reason],
         }
     except Exception:
-        return FALLBACK
+        return fallback
 
 
 def _clean_hint(value) -> str:
@@ -191,12 +187,8 @@ def _clean_hashtags(value) -> list:
     """The model's hashtags, each guaranteed to start with exactly one #.
 
     The prompt asks for the symbol and the contract promises it, but the model returns bare words
-    often enough to notice — a live scan came back with ["minimalism", "interior", "wallframe"].
-    That reaches the results screen as pills and goes out in the share text, so it is visible.
-
-    Normalised here rather than in the client because the contract is what promises the #, and the
-    client is not the only thing that could read this. Anything that is not a usable string is
-    dropped: a hashtag of "" or "#" is worse than one fewer hashtag.
+    often enough to notice. Normalised here rather than in the client, because the contract is what
+    promises the #. Anything unusable is dropped: a pill reading "#" is worse than one fewer pill.
     """
     if not isinstance(value, list):
         return []
@@ -219,31 +211,31 @@ def _detect_dead_space(saliency_map) -> dict:
     phone camera gives you, and it costs nothing: the saliency map is already computed for
     placement. Never raises.
     """
-    OK = {"direction": "ok", "reason": ""}
+    ok = {"direction": "ok", "reason": ""}
     try:
         sal = np.asarray(saliency_map, dtype=np.float32)
         if sal.ndim != 2 or sal.size == 0 or sal.shape[0] < 3:
-            return OK
+            return ok
         # Same reliability gate as placement: on a flat, low-contrast map the thirds are all noise
         # and any comparison between them is meaningless.
         if not (sal.std() > 0.010 and float(sal.max()) - float(sal.min()) > 0.05):
-            return OK
+            return ok
 
-        H = sal.shape[0]
-        top = float(sal[:H // 3].mean())
-        mid = float(sal[H // 3:2 * H // 3].mean())
-        bot = float(sal[2 * H // 3:].mean())
+        h = sal.shape[0]
+        top = float(sal[:h // 3].mean())
+        mid = float(sal[h // 3:2 * h // 3].mean())
+        bot = float(sal[2 * h // 3:].mean())
 
         # A band is "dead" only if it is far emptier than the rest of the frame AND emptier than
         # the opposite band — otherwise a uniformly plain scene would trigger it constantly.
-        DEAD = 0.45
-        if top < DEAD * ((mid + bot) / 2) and top < bot:
+        dead = 0.45
+        if top < dead * ((mid + bot) / 2) and top < bot:
             return {"direction": "down", "reason": "Empty space above — aim a little lower"}
-        if bot < DEAD * ((top + mid) / 2) and bot < top:
+        if bot < dead * ((top + mid) / 2) and bot < top:
             return {"direction": "up", "reason": "Empty floor below — aim a little higher"}
-        return OK
+        return ok
     except Exception:
-        return OK
+        return ok
 
 
 def _moderate_image(b64: str) -> bool:
@@ -321,9 +313,8 @@ def _analyze_with_gpt(b64: str, placement: dict | None = None,
             max_completion_tokens=500,
         )
     except Exception:
-        # Timeout, rate limit, auth failure, outage. Degrades like a bad completion: the OpenCV
-        # features are already computed by the time this is called, so failing the scan here would
-        # throw away work that succeeded and break placement/framing, which never needed the model.
+        # Timeout, rate limit, auth failure, outage. The OpenCV features are already computed by
+        # now, so failing here would throw away work that succeeded and never needed the model.
         logger.warning("vision call failed; falling back to defaults", exc_info=True)
         return {}
 
@@ -331,15 +322,12 @@ def _analyze_with_gpt(b64: str, placement: dict | None = None,
     # analyze_scene reads every field via gpt.get(...), so {} falls back to safe defaults.
     choice = response.choices[0] if response.choices else None
     content = choice.message.content if (choice and choice.message) else None
-    if not content:
-        return {}
     try:
         parsed = json.loads(content)
     except (json.JSONDecodeError, ValueError, TypeError):
         return {}
-    # response_format=json_object should guarantee an object, but a bare array/string/null would
-    # reach analyze_scene's gpt.get(...) calls and raise AttributeError — a 500 from the one
-    # function whose contract is never to cause one.
+    # response_format=json_object should guarantee an object, but a bare array or string would
+    # reach analyze_scene's gpt.get(...) and raise — from the one function that must never raise.
     if not isinstance(parsed, dict):
         logger.warning("vision call returned non-object JSON (%s); ignoring", type(parsed).__name__)
         return {}
@@ -408,9 +396,9 @@ def extract_features(image_path: str) -> dict:
     alignment = 1.0
     if lines is not None:
         deviations = []
-        for l in lines:
+        for line in lines:
             # HoughLinesP shape varies by OpenCV build: (N,1,4) or (N,4). Flatten to be safe.
-            x1, y1, x2, y2 = np.asarray(l).ravel()[:4]
+            x1, y1, x2, y2 = np.asarray(line).ravel()[:4]
             deviations.append(abs(np.degrees(np.arctan2(y2 - y1, x2 - x1))) % 90)
         deviations = [d if d < 45 else 90 - d for d in deviations]
         critical = [d for d in deviations if 0.5 < d < 20]
@@ -457,10 +445,8 @@ def assess_lighting(features: dict) -> dict:
     else:
         quality = "Poor"
 
-    # color_ratio is blue/red (see extract_features): high = blue-dominant = Cool.
-    # Thresholds are unchanged from the original calibration — only the labels were swapped —
-    # so the neutral band still sits where it was tuned (most scenes carry a mild red bias,
-    # which is why the band is centred near 0.8 rather than 1.0).
+    # color_ratio is blue/red (see extract_features): high = blue-dominant = Cool. The neutral
+    # band is centred near 0.8 rather than 1.0 because most scenes carry a mild red bias.
     if color_ratio > 0.9:
         tone = "Cool"
     elif color_ratio < 0.7:

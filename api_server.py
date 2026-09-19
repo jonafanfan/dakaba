@@ -10,27 +10,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import UnidentifiedImageError
 
-from scene_analysis import analyze_scene, DEFAULT_LANGUAGE, InappropriateImageError
+from scene_analysis import DEFAULT_LANGUAGE, InappropriateImageError, analyze_scene
 
 logger = logging.getLogger("daka")
 
-# Frontend origins allowed to call this API. Override with a comma-separated ALLOWED_ORIGINS in
-# the Render dashboard to add a preview deploy or a local dev server (e.g.
-# "https://dakaba.pages.dev,http://localhost:8080"). Note that CORS is a browser-enforced policy,
-# not access control — it stops other sites from spending our key through a user's browser, and
-# does nothing against a direct curl.
+# Frontend origins allowed to call this API: the web build, then the Capacitor iOS and Android
+# WebViews, which send capacitor://localhost and http://localhost as their Origin. A missing origin
+# fails every scan as a generic network error, so the app reports "Analysis failed" with nothing
+# pointing at the cause — and Cloudflare's per-build preview subdomains cannot be listed in advance.
 #
-# Preview deploys are NOT covered: Cloudflare gives each build its own subdomain
-# (abc123.dakaba.pages.dev), which cannot be listed in advance. A preview can show the UI but its
-# scans will fail CORS unless that exact origin is added here.
-# The native shell is a third origin. A Capacitor iOS WebView serves the bundled page from
-# capacitor://localhost and sends exactly that as Origin; Android uses http://localhost. Neither
-# is dakaba.pages.dev, so without them every scan from the app fails CORS — which browsers report
-# as a generic network error, so the app just toasts "Analysis failed" with nothing pointing at
-# the cause. See README's local-development note; it is the same trap, one origin further on.
+# ALLOWED_ORIGINS in the Render dashboard REPLACES this list rather than extending it.
 #
-# NOTE: ALLOWED_ORIGINS in the Render dashboard REPLACES this list rather than adding to it, so if
-# it is set there, these have to be added there too.
+# CORS is browser-enforced, not access control: it stops other sites spending our key through a
+# user's browser, and does nothing against a direct curl.
 DEFAULT_ALLOWED_ORIGINS = ",".join([
     "https://dakaba.pages.dev",
     "capacitor://localhost",
@@ -86,10 +78,10 @@ def _rate_limited(ip: str) -> bool:
         window.popleft()
     if len(window) >= RATE_LIMIT_REQUESTS:
         return True
-    # Bound the dict. Expiry above is lazy — it only runs for the IP being checked — so an IP seen
-    # once and never again keeps its timestamp forever. Evict on the NEWEST hit being outside the
-    # window rather than on the deque being empty, or a flood of one-shot IPs would never be
-    # collected. Dropping that state is free: an IP with no recent hits cannot be rate-limited.
+    # Bound the dict: expiry above is lazy, so an IP seen once keeps its timestamp forever. Evict
+    # on the NEWEST hit being outside the window, not on the deque being empty, or a flood of
+    # one-shot IPs is never collected. Dropping it is free — an IP with no recent hits cannot be
+    # rate-limited.
     if len(_hits) > _MAX_TRACKED_IPS:
         for stale in [
             k for k, v in _hits.items()
@@ -126,8 +118,8 @@ async def health():
 @app.post("/analyze")
 async def analyze(request: Request, file: UploadFile = File(...),
                   lang: str = Form(DEFAULT_LANGUAGE)):
-    # Optional on purpose. Older clients send no lang at all, and a junk value is not worth
-    # rejecting a paid-for scan over — analyze_scene falls back on anything it does not know.
+    """`lang` is optional: older clients send none, and analyze_scene falls back on a value it
+    does not know rather than rejecting a scan that has already been paid for."""
     if _rate_limited(_client_ip(request)):
         return JSONResponse(
             status_code=429,

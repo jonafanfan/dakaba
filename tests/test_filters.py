@@ -201,7 +201,9 @@ def test_the_vivid_family_stays_one_grade():
     """Warm and Cool are variants of Vivid, so they cannot be louder than it. When only the plain
     one was dialled down, its own variants came out stronger than the thing they vary."""
     defs = filter_defs()
-    sat = lambda name: float(re.search(r"saturate\(([\d.]+)\)", defs[name]).group(1))
+    def sat(name):
+        return float(re.search(r"saturate\(([\d.]+)\)", defs[name]).group(1))
+
     assert sat("Vivid") >= sat("Vivid Warm") >= sat("Vivid Cool"), (
         f"Vivid {sat('Vivid')}, Warm {sat('Vivid Warm')}, Cool {sat('Vivid Cool')}"
     )

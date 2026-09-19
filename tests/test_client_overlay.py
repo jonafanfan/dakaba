@@ -41,7 +41,7 @@ def function_source(name):
     html = PAGE.read_text(encoding="utf-8")
     match = re.search(r"^    (?:async )?function " + name + r"\(.*?^    \}$", html, re.S | re.M)
     assert match, f"{name} not found in {PAGE.name}"
-    preamble = "const CUE_RESERVED_PX = %d;\n" % cue_reserved_px()
+    preamble = f"const CUE_RESERVED_PX = {cue_reserved_px()};\n"
     return preamble + match.group(0)
 
 

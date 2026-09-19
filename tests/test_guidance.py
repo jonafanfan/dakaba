@@ -9,7 +9,7 @@ import pathlib
 import numpy as np
 import pytest
 
-from scene_analysis import PLACEMENT_REASONS, _compute_placement, _detect_dead_space
+from scene_analysis import PLACEMENT_REASONS, _clean_hint, _compute_placement, _detect_dead_space
 from conftest import LEFT_THIRD, RIGHT_THIRD, gray, saliency
 
 
@@ -203,9 +203,6 @@ def test_direction_is_always_from_the_closed_set():
 # and the geometry cannot know there is a doorway to stand in front of. That is the model's job,
 # so this is the one field here that is free text rather than a closed set — hence the validation.
 
-from scene_analysis import _clean_hint
-
-
 @pytest.mark.parametrize(
     "raw, expected",
     [
@@ -258,7 +255,7 @@ def test_the_client_offers_exactly_the_filters_the_engine_can_pick():
     assert block, "FILTER_CSS not found in the page"
     client_filters = re.findall(r"'([^']+)':\s*'", block.group(1))
     assert client_filters == VALID_FILTERS, (
-        "client offers %s, engine can pick %s" % (client_filters, VALID_FILTERS)
+        f"client offers {client_filters}, engine can pick {VALID_FILTERS}"
     )
 
 
