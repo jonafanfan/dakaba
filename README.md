@@ -119,8 +119,8 @@ CORS failures usefully.
 
 ```bash
 npm install
-npx cap sync ios
-npx cap open ios        # opens Xcode
+npm run sync            # cap sync ios
+npm run open            # opens Xcode
 ```
 
 Capacitor 8 uses Swift Package Manager, so there is no workspace and no `pod install`. The camera
