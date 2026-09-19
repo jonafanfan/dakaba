@@ -1,0 +1,20 @@
+# Lint config, so `ruff check .` is clean and the two deliberate exceptions are written down
+# rather than rediscovered.
+line-length = 100
+
+[lint]
+select = ["F", "E", "W", "N", "UP", "B", "SIM", "RET"]
+ignore = [
+    # FastAPI's whole dependency system works by calling File()/Form()/Depends() in argument
+    # defaults. B008 exists to catch mutable defaults evaluated once at import; here that IS the
+    # intended behaviour, and the alternative the rule suggests would break the framework.
+    "B008",
+    # A few prompt strings and lookup tables run past 100 columns and read worse wrapped. The
+    # limit is a guide for code, not for prose the model has to receive verbatim.
+    "E501",
+]
+
+[lint.per-file-ignores]
+# The test suite stubs functions to match a signature it does not use — that is the point of a
+# stub, and renaming the arguments to _ would make the stubs harder to compare with the real thing.
+"tests/*" = ["ARG001", "ARG005", "N806"]

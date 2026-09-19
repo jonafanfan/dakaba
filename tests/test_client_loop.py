@@ -131,8 +131,7 @@ def page_script():
     js = re.search(r"<script>(.*?)</script>", html, re.S).group(1)
     # The trailing $('id').addEventListener(...) wiring runs fine against the stub, but the two
     # IIFEs and the dynamic import of MediaPipe do not belong in a unit test.
-    js = js.replace("import(MP)", "Promise.reject(new Error('no cdn'))")
-    return js
+    return js.replace("import(MP)", "Promise.reject(new Error('no cdn'))")
 
 
 def run(extra):

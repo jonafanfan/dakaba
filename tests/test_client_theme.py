@@ -81,9 +81,8 @@ def test_color_scheme_follows_the_choice():
     overscroll gutter in the theme the page is no longer in."""
     text = css()
     for value in ("dark", "light"):
-        assert re.search(r':root\[data-theme="%s"\][^{]*\{[^}]*color-scheme:\s*%s' % (value, value), text), (
-            f"no color-scheme for an explicit {value}"
-        )
+        pattern = rf':root\[data-theme="{value}"\][^{{]*\{{[^}}]*color-scheme:\s*{value}'
+        assert re.search(pattern, text), f"no color-scheme for an explicit {value}"
 
 
 def test_the_battery_icon_is_drawn_heavier_in_dark():
