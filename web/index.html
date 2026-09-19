@@ -811,14 +811,11 @@
     // a CSS filter list quite happily alongside the ordinary functions, and applyFilters handles
     // the same token when baking, so preview and saved file stay identical.
     //
-    // Strengths: warm is slightly stronger than cool because warm skin reads as healthy while cool
-    // skin reads as ill. Both land near a ±20 shift on a neutral grey, measured — for reference,
-    // Silvertone's tint is +15.
+    // Warm is slightly stronger than cool, because warm skin reads as healthy and cool skin reads
+    // as ill. Both land near a ±20 shift on a neutral grey.
     const FILTER_CSS = {
-      // The Vivid family came down 0.15 each: 1.5 pushed skin past healthy into sunburn, and
-      // foliage past green into poster paint. The three move together so the family still reads as
-      // one grade with two temperatures — dropping only the untinted one would leave the warm and
-      // cool variants looking louder than the thing they are variants of.
+      // Vivid's three move together, or the warm and cool variants come out louder than the grade
+      // they are variants of.
       'Vivid':         'saturate(1.35) contrast(1.12)',
       'Vivid Warm':    'url(#warmTint) saturate(1.30) contrast(1.1)',
       'Vivid Cool':    'url(#coolTint) saturate(1.25) contrast(1.1) brightness(1.02)',
@@ -930,12 +927,9 @@
 
     // Detection runs on a downscaled copy, not on the camera frame.
     //
-    // MediaPipe uploads whatever you hand it as a GPU texture. Once the capture track went to
-    // 4096x3072 that is ~50MB a frame, for a model that works perfectly well on a few hundred
-    // pixels — and 4096 is exactly the maximum texture size on a great many mobile GPUs, so on
-    // those the call does not run slowly, it throws. The catch below then swallows it and
-    // detection silently never happens: no subject, no green marker, no movement cues, and
-    // nothing on screen saying why.
+    // MediaPipe uploads whatever you hand it as a GPU texture, and 4096 is exactly the maximum
+    // texture size on a great many mobile GPUs — at the full capture size the call does not run
+    // slowly, it throws, and the catch below then hides that detection is not happening at all.
     //
     // Landmarks come back normalised, and this scales both axes by the same factor, so the
     // coordinates are identical to what the full frame would have produced.
@@ -1025,13 +1019,11 @@
     let liveLean = 0;
 
     /* ── Camera state (idle | loading | tips) ── */
-    // Height is measured, not listed: the placement hint wraps to two lines often enough that any
-    // fixed number per state would be wrong a good share of the time, and a wrong number clips the
-    // shutter. Reading the natural height and animating to it is correct whatever is in there.
-    // A pinned height is only ever a means of animating one. Left in place it combines with
-    // overflow:hidden to clip anything that appears afterwards — and things do appear afterwards:
-    // detectLenses awaits enumerateDevices, so the 1x/0.5x toggle arrives long after the bar has
-    // been measured, and it took the hint underneath it out of view too.
+    // Height is measured rather than listed per state: the placement hint wraps to two lines often
+    // enough that a fixed number would clip the shutter. The pin is only a means of animating, and
+    // must be released afterwards — left in place, overflow:hidden clips whatever arrives later,
+    // and things do arrive later (detectLenses awaits enumerateDevices, so the lens toggle lands
+    // long after the bar was measured).
     let barRelease = null;
     function releaseBar(el) {
       clearTimeout(barRelease);
@@ -1096,12 +1088,10 @@
       if (s !== 'tips') resetCoaching();
       // Last: resetCoaching clears the placement hint, which is part of what is being measured.
       //
-      // Analysing holds the bar exactly where it is instead of measuring. Its contents are hidden
-      // behind the scrim, so letting it collapse moved the frame out and straight back for no
-      // reason the user could see — two animations of a live video either side of a network wait,
-      // which is where the stutter and the black flash came from. One move now, when coaching
-      // starts.
-      // Analysing holds its pin for as long as the scan takes, so any pending release is cancelled.
+      // Analysing holds the bar where it is instead of measuring: its contents are behind the
+      // scrim, so letting it collapse would animate the frame out and back for no visible reason,
+      // either side of a network wait. It holds the pin for the whole scan, cancelling any
+      // pending release.
       if (s === 'loading') { clearTimeout(barRelease); if (from) $('camControls').style.height = from + 'px'; }
       else resizeControls(from);
       // After the bar, so the natural position this measures is the one the frame is settling to.
@@ -1115,12 +1105,9 @@
         $('video').srcObject = stream;
         $('videoBackdrop').srcObject = stream;   // same stream, so they can never disagree
         hasCamera = true;
-        // show() BEFORE setCamState, not after. setCamState ends in resizeControls, which
-        // measures the controls bar to animate its height — and a measurement taken while the
-        // camera screen is still display:none comes back 0, so resizeControls bails and leaves
-        // the bar at `auto`. With no pinned starting height the first state change afterwards has
-        // nothing to animate FROM, which is why the frame only began gliding from the second scan
-        // onwards: by then an earlier call had pinned a real number.
+        // show() BEFORE setCamState. setCamState ends in resizeControls, and a measurement taken
+        // while the screen is still display:none comes back 0, leaving the bar at `auto` with no
+        // height for the next state change to animate from.
         show('camera');
         setCamState('idle');
         detectLenses();
