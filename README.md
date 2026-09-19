@@ -1,93 +1,80 @@
-# 打卡吧！ (Dǎkǎ ba!)
+# 打卡吧！(Dǎkǎ ba!)
 
-A mobile web app that tells you **where to stand** for a good check-in photo.
+**DaKaBa tells you exactly where your friend should stand for a good photo, and why.**
 
-Point the camera at an empty scene and tap. The backend analyses the frame — light direction,
-visual balance, background clutter, blown-out regions — and returns the spot where a person should
-stand for the best composition. The app draws a marker there, your subject stands on it, you shoot.
-
-The guiding idea: **subject positioning, framing and basic colour grading are what make the photo.**
-Posing is left to the person being photographed.
-
----
-
-## Live
+Point your phone at a scene and tap once. The app works out the best spot for a person to stand,
+draws a marker there, and explains its choice: "light falls on your face", "cleaner background
+here", "out of the window glare". Then it talks you through the shot, picks a filter, and tags it.
 
 | | |
 |---|---|
-| Frontend | <https://dakaba.pages.dev> (Cloudflare Pages — static files only, no build step) |
-| Backend | <https://daka-backend-9bfz.onrender.com> (Render, free plan) |
-| Health check | `GET /health` → `{"status": "ok"}` |
+| Try it | <https://dakaba.pages.dev> |
+| iOS app | Capacitor shell in [`ios/`](ios), built from the same page |
+| Backend | <https://daka-backend-9bfz.onrender.com> |
 
-The backend is on Render's free plan, so it **spins down when idle** and the first request after a
-cold start takes ~50s. A cron job pings `/health` to keep it warm. The frontend already handles the
-slow case with a 60s timeout and a "server may be waking up" message.
+Open it on a phone. It needs a rear camera and motion sensors, and it works best with two people,
+one holding the phone and one standing in the scene.
 
----
+The idea behind it: subject positioning, framing and colour grading are what make a photo. Posing is
+left to the person being photographed.
 
 ## The flow
 
 ```
-Home  →  camera  →  point at an empty scene, tap shutter
-                         ↓
-                    POST /analyze  (frame capped at 1024px, JPEG q0.7)
-                         ↓
-         capture gate: reject if lighting is Poor or the frame is blurry
-                         ↓
-    standing marker drawn at the returned placement point, with the depth
-    sentence (placement_hint) above the shutter — "Stand in front of the door"
-                         ↓
-      MediaPipe pose tracks the subject's ankles against it: cues to move them
-      left/right/closer/back, then straighten/tilt from the phone's own sensors
-                         ↓
-        marker turns green once they are on the spot  →  take the keeper photo
-                         ↓
-         results: filter preview, hashtag pills, share/save
+Home  ->  camera  ->  point at an empty scene, tap the shutter
+                          |
+                     POST /analyze  (frame capped at 1024px, JPEG q0.7)
+                          |
+          capture gate: reject if the light is Poor or the frame is blurry
+                          |
+     standing marker drawn at the returned point, with a depth sentence above
+     the shutter ("Stand in front of the blue door")
+                          |
+       MediaPipe pose tracks the subject's ankles against it, cueing them
+       left / right / closer / back, then the camera's own tilt and horizon
+                          |
+         marker turns green once they are on the spot  ->  take the photo
+                          |
+          results: filter strip, hashtag pills, share, save
 ```
-
----
 
 ## How it works
 
 | Piece | File | Notes |
 |---|---|---|
-| Frontend (all of it) | [`web/index.html`](web/index.html) | ~1460 lines, HTML + CSS + JS inline. No build step. |
-| API | [`api_server.py`](api_server.py) | FastAPI. Two routes: `/health`, `POST /analyze`. |
-| Engine | [`scene_analysis.py`](scene_analysis.py) | OpenCV measurements + one vision-model call. |
-| Response contract | [`CONTRACT.md`](CONTRACT.md) | **Read this before changing the response shape.** |
+| Frontend (all of it) | [`web/index.html`](web/index.html) | HTML, CSS and JS inline. No build step. |
+| API | [`api_server.py`](api_server.py) | FastAPI. Two routes: `/health` and `POST /analyze`. |
+| Engine | [`scene_analysis.py`](scene_analysis.py) | OpenCV measurements plus one vision-model call. |
+| Response contract | [`CONTRACT.md`](CONTRACT.md) | Read before changing the response shape. |
+| iOS shell | [`capacitor.config.json`](capacitor.config.json), [`ios/`](ios) | Capacitor 8. Adds the camera roll and the tip jar. |
 
-### The engine is deliberately split in two
+### The engine is split in two
 
-**OpenCV does the measurable half** — brightness, colour balance, Canny edge density, Laplacian
-blur, spectral-residual saliency, Hough-line horizon tilt, and the placement heuristic. This is the
-part that carries the product.
+**OpenCV does the measurable half.** Brightness, colour balance, Canny edge density, Laplacian
+blur, spectral-residual saliency, Hough-line horizon tilt, and the placement decision.
 
-**The vision model does the subjective half** — scene name, filter choice, hashtags, and the depth
-sentence (`placement_hint`) that refines the marker. Four fields, and the positioning itself does
-not depend on any of them.
+**The vision model does the subjective half.** Scene name, filter choice, hashtags, and the depth
+sentence that refines the marker. Four fields, and the positioning does not depend on any of them.
 
-That split is why a vision-call failure returns a usable scan with `scene_type: "Unknown"` instead
-of failing: the positioning advice never needed the model. One consequence for consumers — **a
-`200` is not proof the model ran.** See [`CONTRACT.md`](CONTRACT.md) §3.6.
+So a failed vision call still returns a usable scan, with `scene_type: "Unknown"`. One consequence
+for anyone reading the response: **a `200` is not proof the model ran.** See
+[`CONTRACT.md`](CONTRACT.md) §3.6.
 
-`_compute_placement` is the core of it: it fuses visual balance (stand opposite the scene's focal
-mass), background cleanliness (prefer the emptier side), and light direction (stand on the dimmer
-side so light falls on your face), plus a hard **backlight veto** so you're never placed in front of
-a blown-out window. Each signal only votes when it's reliable for that scene.
+`_compute_placement` is the core. It fuses visual balance (stand opposite the scene's focal mass),
+background cleanliness (prefer the emptier side) and light direction (stand on the dimmer side, so
+the light falls on your face), each voting only when it is reliable for that scene. Over the top
+sits a backlight veto, so nobody is ever placed in front of a blown-out window.
 
-The prompt behind `placement_hint` carries three constraints of its own — the spot must be in
-frame and walkable, `left`/`right` mean the viewer's, and it must never tell the subject which way
-to face. Those are *asked for*, not computed, and nothing server-side can check the sentence that
-comes back; `CONTRACT.md` §3.8 says so plainly. Light is the exception: the backlight veto above
-guarantees it geometrically, so the prompt does not ask for it as well.
+### The tip jar
 
----
+RevenueCat, native builds only, and nothing is gated. No entitlement is read anywhere, and
+[`tests/test_client_loop.py`](tests/test_client_loop.py) enforces that by scanning the page for the
+words that would prove otherwise. The button appears only after a photo, and only once RevenueCat
+answers with a package that can actually be bought.
 
-## Local development
+## Running it locally
 
-Requires **Python 3.13** (pinned in [`.python-version`](.python-version)).
-
-### Backend
+Requires **Python 3.13**, pinned in [`.python-version`](.python-version).
 
 ```bash
 python -m venv .venv
@@ -97,101 +84,96 @@ python -m venv .venv
 # macOS / Linux
 .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
 
-# run it
 .venv/Scripts/python -m uvicorn api_server:app --reload
 ```
 
-Serves on <http://127.0.0.1:8000>. It **starts without an API key** — the OpenAI client is
-constructed lazily — so `/health` works immediately and you only need a key to actually scan:
+Serves on <http://127.0.0.1:8000>. It starts without an API key, so `/health` works immediately. You
+only need a key to scan:
 
 ```bash
 export OPENAI_API_KEY=sk-...        # bash
 $env:OPENAI_API_KEY = "sk-..."      # PowerShell
 ```
 
-Never commit the key. `.env`, `.env.*`, `*.key` and `daka_openai_key.txt` are all gitignored.
+`.env`, `.env.*`, `*.key` and `daka_openai_key.txt` are gitignored.
 
 ### Frontend
 
-It's one static file with no build step, but **don't open it with `file://`** — the camera and
-sensor APIs need a secure context, and a `file://` page sends `Origin: null`, which CORS can never
-match. Serve it over HTTP:
+One static file, no build step. Serve it over HTTP rather than opening it with `file://`, which
+sends `Origin: null` and can never match CORS:
 
 ```bash
 cd web && python -m http.server 8080
 ```
 
-### Pointing the frontend at your local backend
+To point it at your local backend, two things have to change:
 
-Two things have to change, and neither is obvious:
+1. The API URL is hardcoded in the `API` constant at the top of the script in
+   [`web/index.html`](web/index.html). Change it to `http://localhost:8000`.
+2. Set `ALLOWED_ORIGINS=http://localhost:8080` in the shell running your local backend.
 
-1. **The API URL is hardcoded** at [`web/index.html:325`](web/index.html#L325). Change it to
-   `http://localhost:8000`.
-2. **CORS will reject your origin.** The backend only allows the production domain by
-   default, so set this in the shell running your *local* backend:
+Skip the second and every scan fails as a generic network error, because browsers do not report
+CORS failures usefully.
 
-   ```bash
-   export ALLOWED_ORIGINS=http://localhost:8080
-   ```
+### iOS
 
-If you skip step 2, every scan fails with a generic network error — browsers don't report CORS
-failures usefully, so the app just toasts "Analysis failed" with nothing pointing at the cause.
-It's a confusing hour if you don't know to look for it.
+```bash
+npm install
+npx cap sync ios
+npx cap open ios        # opens Xcode
+```
+
+Capacitor 8 uses Swift Package Manager, so there is no workspace and no `pod install`. The camera
+roll write lives in [`ios/App/App/SavePhotoPlugin.swift`](ios/App/App/SavePhotoPlugin.swift).
 
 ### Testing on a phone
 
-Camera, `devicemotion` and `deviceorientation` all need HTTPS on a real device. The path of least
-resistance is to push a branch and use the Cloudflare Pages branch preview — but note that
-**preview URLs are a different origin and are CORS-blocked** by the production backend, so a
-preview can load the UI but not scan. To scan from a preview you'd need to add its URL to
-`ALLOWED_ORIGINS` in the Render dashboard.
-
----
+Camera and motion sensors need HTTPS on a real device. Push a branch and use the Cloudflare Pages
+preview, but note that preview URLs are a different origin and are CORS-blocked, so a preview can
+show the UI without scanning.
 
 ## Tests
 
 ```bash
-.venv/Scripts/python -m pytest        # or bare `pytest`
+.venv/Scripts/python -m pytest
+ruff check .
 ```
 
-**382 tests, ~4 seconds.** No API key needed and no network calls — the OpenAI client is faked, and
-the fixture makes constructing a real one a test failure.
+**404 tests, under 10 seconds.** No API key and no network: the OpenAI client is faked, and
+constructing a real one is a test failure.
 
-The three `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
-exist because two bugs reached a phone that `node --check` could not see — both were valid syntax,
-both were out-of-scope identifiers that only failed when the code actually ran.
+The four `test_client_*` files run the page's own JavaScript in node against a stubbed DOM. They
+exist because two bugs reached a phone that `node --check` could not see. Both were valid syntax,
+and both were out-of-scope identifiers that only failed when the code actually ran.
 
 | File | Tests | Covers |
 |---|---|---|
-| [`test_openai_paths.py`](tests/test_openai_paths.py) | 89 | moderation, every degradation path, request shapes, `_encode_image`, the `lang` prompt |
-| [`test_client_loop.py`](tests/test_client_loop.py) | 60 | **the render loop, the marker, the cue ladder, the camera lifecycle and the horizon level's gravity maths, run for real in node** |
-| [`test_guidance.py`](tests/test_guidance.py) | 42 | placement reason, dead-space tilt, the model's depth hint, the client/engine filter agreement |
-| [`test_assessments.py`](tests/test_assessments.py) | 40 | lighting, composition, blueprint — thresholds at their boundaries |
-| [`test_api.py`](tests/test_api.py) | 31 | endpoint guards: size cap, rate limit, error mapping, CORS, `lang` |
-| [`test_client_overlay.py`](tests/test_client_overlay.py) | 29 | marker drawing, `visibleCrop` maths and the camera-region layout invariants |
-| [`test_client_i18n.py`](tests/test_client_i18n.py) | 26 | **the language switch, run for real in node** — both string tables, every key the markup and script ask for, the marker caption and tilt cue keys |
-| [`test_placement.py`](tests/test_placement.py) | 23 | every directional claim in `_compute_placement`, including the backlight veto |
-| [`test_filters.py`](tests/test_filters.py) | 16 | pixel-baked filters match the CSS preview exactly |
+| [`test_openai_paths.py`](tests/test_openai_paths.py) | 89 | Moderation, every degradation path, request shapes, the `lang` prompt |
+| [`test_client_loop.py`](tests/test_client_loop.py) | 79 | The render loop, marker, cue ladder, camera lifecycle, horizon maths, tip jar |
+| [`test_guidance.py`](tests/test_guidance.py) | 42 | Placement reason, dead-space tilt, depth hint, client/engine filter agreement |
+| [`test_assessments.py`](tests/test_assessments.py) | 40 | Lighting, composition, blueprint, at their thresholds |
+| [`test_client_overlay.py`](tests/test_client_overlay.py) | 32 | Marker drawing, `visibleCrop`, camera-region layout |
+| [`test_api.py`](tests/test_api.py) | 31 | Size cap, rate limit, error mapping, CORS, `lang` |
+| [`test_client_i18n.py`](tests/test_client_i18n.py) | 26 | The language switch, both string tables, every key asked for |
+| [`test_placement.py`](tests/test_placement.py) | 23 | Every directional claim in `_compute_placement`, including the veto |
+| [`test_filters.py`](tests/test_filters.py) | 16 | Baked filters match the CSS preview exactly |
 | [`test_features.py`](tests/test_features.py) | 14 | `extract_features` on synthetic scenes, all three blur regimes |
-| [`test_client_theme.py`](tests/test_client_theme.py) | 12 | the light/dark choice and what it does and does not repaint |
+| [`test_client_theme.py`](tests/test_client_theme.py) | 12 | The light/dark choice, and what it does and does not repaint |
 
-CI runs the suite on every PR to `main` ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)).
-Test-only dependencies live in `requirements-dev.txt` so Render's build stays lean.
+CI runs on every PR to `main` ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)), reading
+the same `.python-version` Render does.
 
-### Conventions worth keeping
+### Conventions
 
-**Mutation-test new tests.** A green suite proves nothing about whether it *can* fail. Break the
-thing on purpose, confirm a test catches it, revert. This caught three pieces of unreachable or
-redundant code, and one test guard that had silently stopped working. **Commit before you start** —
-the revert step is `git checkout --`, which will happily delete uncommitted work.
+**Mutation-test new tests.** A green suite proves nothing about whether it can fail. Break the thing
+on purpose, confirm a test catches it, revert. This found three pieces of dead code and one test
+guard that had silently stopped working. Commit first: the revert step is `git checkout --`.
 
-**The response contract is additive.** Never rename, remove or retype an existing field without
-bumping the version in [`CONTRACT.md`](CONTRACT.md) and telling the team.
+**The contract is additive.** Never rename, remove or retype a field without bumping the version in
+[`CONTRACT.md`](CONTRACT.md).
 
-**Assert real values, not tautologies.** `assert x in (a, b)` where those are the only two possible
-values tests nothing. Two such assertions shipped here before mutation testing found them.
-
----
+**Assert real values.** `assert x in (a, b)` where those are the only options tests nothing. Two
+such assertions shipped here before mutation testing found them.
 
 ## Deployment
 
@@ -199,72 +181,51 @@ Both sides auto-deploy from `main`.
 
 | | Config | Notes |
 |---|---|---|
-| Backend | [`render.yaml`](render.yaml) | Build `pip install -r requirements.txt`, start `uvicorn api_server:app`. Health check `/health`. |
-| Frontend | Cloudflare Pages dashboard | No config in-repo; no build command, output directory is `web/`. |
+| Backend | [`render.yaml`](render.yaml) | `uvicorn api_server:app`, health check `/health`. |
+| Frontend | Cloudflare Pages dashboard | No build command, output directory `web/`. |
 
-### Environment variables
-
-Set in the Render dashboard (Environment tab):
+Set in the Render dashboard:
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `OPENAI_API_KEY` | **yes** | — | Never committed (`sync: false` in `render.yaml`). |
-| `ALLOWED_ORIGINS` | no | `https://dakaba.pages.dev` | Comma-separated. **Replaces** the default rather than adding to it, so keep the production origin in the list. |
+| `OPENAI_API_KEY` | yes | none | Never committed (`sync: false` in `render.yaml`). |
+| `ALLOWED_ORIGINS` | no | `https://dakaba.pages.dev`, plus the two Capacitor origins | Comma-separated. Replaces the default rather than adding to it. |
 
-Dependencies are pinned exactly (`==`) in `requirements.txt`, and Python is pinned in
-`.python-version` — which CI reads too, so CI and production can't drift apart. To upgrade
-something, bump one line and run the tests; don't bulk-refresh.
+The backend is on Render's free plan, so it sleeps when idle and the first request after that takes
+about 50 seconds. A cron job pings `/health` every 10 minutes to keep it warm.
 
----
+Dependencies are pinned exactly in `requirements.txt`. To upgrade something, bump one line and run
+the tests.
 
-## Security posture
+## Cost and abuse
 
-`/analyze` is **unauthenticated by design** — this is a school project and adding auth was
-considered and declined. What protects it is cost control, not access control:
+`/analyze` is unauthenticated by design. This is a school project, and auth was considered and
+declined. What protects it is cost control rather than access control:
 
-- **CORS** pinned to the live frontend origin. Browser-enforced only; does nothing against a direct `curl`.
-- **Rate limit** 20 requests / 60s per IP. In-memory, so it resets on every cold start, and it keys
-  on a spoofable `X-Forwarded-For`.
-- **Size cap** 8 MB, enforced while reading in chunks so a hostile body can't be buffered first.
-- **Error bodies** are fixed user-safe strings; exception detail is logged, never returned.
+- **CORS** pinned to the live origins. Browser-enforced only, and does nothing against `curl`.
+- **Rate limit** of 20 requests per minute per IP, in memory, keyed on a spoofable header.
+- **Size cap** of 8 MB, enforced while reading in chunks.
+- **Error bodies** are fixed strings. Exception detail is logged, never returned.
 
-Each `/analyze` costs two OpenAI calls (moderation + vision), so the endpoint spends money. If the
-URL ever leaks widely, the rate limit is a speed bump, not a wall.
+Every scan costs two OpenAI calls, so the endpoint spends money. If the URL leaked widely, the rate
+limit is a speed bump rather than a wall.
 
-**Moderation fails open**: if the moderation call itself errors, the image is treated as safe. That
-was judged better than refusing every scan during an outage, but it is a bypass. It's logged.
-
----
-
-## Gotchas
-
-Device behaviour we had to find by watching the app fail on a real phone — why the filters use an
-SVG colour matrix, why detection runs on a 480px copy, why the compass drift warning was deleted:
-[`docs/gotchas.md`](docs/gotchas.md).
+**Moderation fails open.** If the moderation call itself errors, the image is treated as safe. That
+beats refusing every scan during an outage, but it is a bypass, and it is logged.
 
 ## Known issues
 
-**No "you've moved since scanning" warning.** There used to be a two-dot framing lock for this, but
-it was removed because it couldn't work. It read yaw from `deviceorientation.alpha`, and a phone
-held upright with the rear camera on the horizon sits at `beta ≈ 90°` — the gimbal-lock singularity
-of the W3C `Z-X'-Y''` angle sequence, where `alpha` and `gamma` become degenerate. `alpha` swung
-wildly while the phone was nearly still, so the dots jumped and never settled. Not a tuning problem
-and not a sign error: the sensor can't separate yaw from roll in exactly the pose this app is used
-in.
+[`docs/gotchas.md`](docs/gotchas.md) covers the device behaviour we had to find the hard way: why
+the filters use an SVG colour matrix, why detection runs on a 480px copy, why the compass drift
+warning was deleted.
 
-A warning like this would need a different signal — integrating `devicemotion.rotationRate`
-over the short scan-to-shoot window. Gravity can measure pitch and roll reliably but cannot
-measure yaw at all, and panning is the main way people re-aim. Nothing else is affected: the
-standing marker and the horizon level both read gravity, not orientation.
+**No "you have moved since scanning" warning.** The compass cannot measure it in the pose you hold a
+phone to take a photo. Doing it properly needs the gyroscope integrated over the few seconds between
+scanning and shooting.
 
 **Extreme blur escapes the blur gate.** Past a point every edge smears below Canny's threshold, edge
-density hits zero, and the "too plain to judge" escape hatch passes the frame — a plain wall and a
-destroyed image are indistinguishable by edge density alone. Probably narrower on real broadband
-scenes than on synthetic tests. Characterised in `test_features.py`.
+density hits zero, and the "too plain to judge" escape hatch passes the frame. Characterised in
+[`test_features.py`](tests/test_features.py).
 
-**Generated but never displayed:** `lighting.tip`, `composition` and `blueprint.notes`. All free
-(pure OpenCV, no tokens). `composition.horizon` and `blueprint.notes` speak directly to framing, so
-they're the most natural things to surface next.
-
-`pose_tips` was removed in contract `0.10` — see [`CONTRACT.md`](CONTRACT.md) for why. The prompt is
-recoverable from `git show 3878ccb` if it's ever wanted back.
+**Generated but never shown:** `lighting.tip`, `composition` and `blueprint.notes`. All free to
+compute. `composition.horizon` and `blueprint.notes` are the most natural things to surface next.
